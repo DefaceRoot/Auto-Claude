@@ -310,12 +310,62 @@ your-project/
 - **Multiple Specs**: Track and run multiple specifications independently
 - **Graphiti Memory** (Optional): Persistent knowledge graph for cross-session context retention
 
+## Graphiti Memory Integration (Optional)
+
+Auto-Build includes an optional **Graphiti-based persistent memory layer** that enables context retention across coding sessions. This uses FalkorDB as a graph database to store codebase patterns, session insights, and cross-session learnings.
+
+### Why Use Graphiti Memory?
+
+- **Cross-session context**: Agents remember insights from previous sessions
+- **Pattern recognition**: Discovered codebase patterns persist and are reusable
+- **Smarter agents**: Context retrieval helps agents make better decisions
+
+### Setup
+
+**Step 1:** Install the Graphiti dependency
+
+```bash
+# Uncomment the graphiti line in requirements.txt, or install directly:
+pip install graphiti-core[falkordb]
+```
+
+**Step 2:** Start FalkorDB via Docker
+
+```bash
+docker-compose up -d falkordb
+```
+
+**Step 3:** Configure environment variables
+
+Add to your `.env` file:
+
+```bash
+# Enable Graphiti integration
+GRAPHITI_ENABLED=true
+
+# Required for Graphiti embeddings
+OPENAI_API_KEY=sk-your-openai-key-here
+```
+
+**Step 4:** Verify it's working
+
+```bash
+python auto-build/run.py --list
+# Should show: "Graphiti memory: ENABLED"
+```
+
+### When Disabled
+
+When `GRAPHITI_ENABLED` is not set (default), Auto-Build uses file-based memory only. This is the zero-dependency default that works out of the box.
+
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `CLAUDE_CODE_OAUTH_TOKEN` | Yes | OAuth token from `claude setup-token` |
 | `AUTO_BUILD_MODEL` | No | Model override (default: claude-opus-4-5-20251101) |
+| `GRAPHITI_ENABLED` | No | Set to `true` to enable Graphiti memory |
+| `OPENAI_API_KEY` | For Graphiti | Required when Graphiti is enabled |
 
 ## Documentation
 
