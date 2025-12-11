@@ -18,6 +18,9 @@ logs/
 # Personal notes
 OPUS_ANALYSIS_AND_IDEAS.md
 
+# Documentation
+docs/
+
 # Python
 __pycache__/
 *.py[cod]
