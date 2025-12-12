@@ -62,12 +62,16 @@ class TestGraphitiConfig:
     """Tests for GraphitiConfig class."""
 
     def test_from_env_defaults(self):
-        """Config uses correct defaults."""
+        """Config uses correct defaults.
+
+        Note: Default port is 6380 (mapped from FalkorDB's internal 6379)
+        to avoid conflicts with local Redis instances.
+        """
         with patch.dict(os.environ, {}, clear=True):
             config = GraphitiConfig.from_env()
             assert config.enabled is False
             assert config.falkordb_host == "localhost"
-            assert config.falkordb_port == 6379
+            assert config.falkordb_port == 6380  # Maps to internal 6379
             assert config.database == "auto_build_memory"
 
     def test_from_env_custom_values(self):
