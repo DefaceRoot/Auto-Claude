@@ -105,7 +105,8 @@
             "type": "command",
             "run": "grep -n 'run.py\\|--spec' auto-claude/spec_runner.py | head -5"
           },
-          "status": "pending",
+          "status": "completed",
+          "completed_at": "2025-12-12T19:45:00.000000",
           "implementation_details": "In main() around line 1745-1773, the auto-build launch only happens if not args.no_build. Add additional check: only launch if ReviewState.load(spec_dir).approved is True. If not approved, print message about needing to approve first with instructions."
         }
       ]
@@ -128,7 +129,8 @@
             "type": "command",
             "run": "python -c \"from run import validate_environment; print('validate_environment imported')\""
           },
-          "status": "pending",
+          "status": "completed",
+          "completed_at": "2025-12-12T20:15:00.000000",
           "implementation_details": "In main() function, after validate_environment() check around line 615, add new check using ReviewState.load(spec_dir).is_approved(). If not approved, print error message with instructions on how to run review. Show: 'python auto-claude/spec_runner.py --spec {spec_name} --review' command. Exit with code 1."
         },
         {
@@ -142,7 +144,8 @@
             "type": "command",
             "run": "python auto-claude/run.py --help | grep -i force"
           },
-          "status": "pending",
+          "status": "completed",
+          "completed_at": "2025-12-12T20:30:00.000000",
           "implementation_details": "Add --force argument to parse_args() around line 416. Description: 'Skip approval check and start build anyway (for debugging)'. In the approval check added in chunk-3-1, if args.force is True, skip the check with a warning message."
         },
         {
@@ -156,7 +159,8 @@
             "type": "command",
             "run": "python auto-claude/run.py --help | grep -i review"
           },
-          "status": "pending",
+          "status": "completed",
+          "completed_at": "2025-12-12T21:00:00.000000",
           "implementation_details": "Add --review-status argument to parse_args(). In main(), handle --review-status by calling display function from review.py that shows: approved status, when approved, by whom, any feedback, and whether spec has changed since approval."
         }
       ]
@@ -179,7 +183,8 @@
             "type": "command",
             "run": "python -c \"from review import ReviewState; import hashlib; print('Hash imports work')\""
           },
-          "status": "pending",
+          "status": "completed",
+          "completed_at": "2025-12-12T15:30:00.000000",
           "implementation_details": "In ReviewState, implement spec_hash calculation using hashlib.md5 on spec.md content. When saving approval, store the hash. In is_approval_valid(), compare stored hash with current spec.md hash. If different, return False (approval is stale). Add re-approval flow when spec changes detected."
         },
         {
