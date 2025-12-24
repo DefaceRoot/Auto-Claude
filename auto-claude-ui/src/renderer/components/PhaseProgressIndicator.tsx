@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import type { ExecutionPhase, TaskLogs, Subtask } from '../../shared/types';
+import type { ExecutionPhase, TaskLogs, Subtask, AgentFramework } from '../../shared/types';
 
 interface PhaseProgressIndicatorProps {
   phase?: ExecutionPhase;
@@ -9,6 +9,7 @@ interface PhaseProgressIndicatorProps {
   isStuck?: boolean;
   isRunning?: boolean;
   className?: string;
+  framework?: AgentFramework;
 }
 
 // Phase display configuration
@@ -35,6 +36,7 @@ export function PhaseProgressIndicator({
   isStuck = false,
   isRunning = false,
   className,
+  framework,
 }: PhaseProgressIndicatorProps) {
   // Calculate subtask-based progress (for coding phase)
   const completedSubtasks = subtasks.filter((c) => c.status === 'completed').length;
@@ -194,7 +196,7 @@ export function PhaseProgressIndicator({
 
       {/* Phase steps indicator (shows overall flow) */}
       {(isRunning || phase !== 'idle') && (
-        <PhaseStepsIndicator currentPhase={phase} isStuck={isStuck} />
+        <PhaseStepsIndicator currentPhase={phase} isStuck={isStuck} framework={framework} />
       )}
     </div>
   );
@@ -206,15 +208,23 @@ export function PhaseProgressIndicator({
 function PhaseStepsIndicator({
   currentPhase,
   isStuck,
+  framework,
 }: {
   currentPhase: ExecutionPhase;
   isStuck: boolean;
+  framework?: AgentFramework;
 }) {
-  const phases: { key: ExecutionPhase; label: string }[] = [
+  // Base phases for all frameworks
+  const basePhases: { key: ExecutionPhase; label: string }[] = [
     { key: 'planning', label: 'Plan' },
     { key: 'coding', label: 'Code' },
-    { key: 'qa_review', label: 'QA' },
   ];
+
+  // QA phase only shown for auto-claude framework (not for quick-mode)
+  const phases: { key: ExecutionPhase; label: string }[] =
+    framework === 'quick-mode'
+      ? basePhases
+      : [...basePhases, { key: 'qa_review', label: 'QA' }];
 
   const getPhaseState = (phaseKey: ExecutionPhase) => {
     const phaseOrder = ['planning', 'coding', 'qa_review', 'qa_fixing', 'complete'];
