@@ -36,6 +36,7 @@ export function PhaseProgressIndicator({
   isStuck = false,
   isRunning = false,
   className,
+  framework,
 }: PhaseProgressIndicatorProps) {
   // Calculate subtask-based progress (for coding phase)
   const completedSubtasks = subtasks.filter((c) => c.status === 'completed').length;
@@ -195,7 +196,7 @@ export function PhaseProgressIndicator({
 
       {/* Phase steps indicator (shows overall flow) */}
       {(isRunning || phase !== 'idle') && (
-        <PhaseStepsIndicator currentPhase={phase} isStuck={isStuck} />
+        <PhaseStepsIndicator currentPhase={phase} isStuck={isStuck} framework={framework} />
       )}
     </div>
   );
@@ -207,9 +208,11 @@ export function PhaseProgressIndicator({
 function PhaseStepsIndicator({
   currentPhase,
   isStuck,
+  framework,
 }: {
   currentPhase: ExecutionPhase;
   isStuck: boolean;
+  framework?: AgentFramework;
 }) {
   const phases: { key: ExecutionPhase; label: string }[] = [
     { key: 'planning', label: 'Plan' },
