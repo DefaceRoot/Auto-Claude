@@ -81,14 +81,11 @@ export function UsageIndicator({ onOpenSettings }: UsageIndicatorProps) {
     return (
       <button
         disabled
-        className="flex items-center gap-2.5 px-4 py-2 rounded-lg border text-muted-foreground bg-card/80 backdrop-blur-sm border-border opacity-50 shadow-sm"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-md border bg-card/80 backdrop-blur-sm opacity-50"
         aria-label="Loading usage data"
       >
-        <RefreshCw className="h-4 w-4 animate-spin shrink-0" />
-        <div className="flex flex-col items-start gap-0.5">
-          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Usage</span>
-          <span className="text-base font-semibold font-mono leading-none">--%</span>
-        </div>
+        <RefreshCw className="h-3.5 w-3.5 animate-spin shrink-0" />
+        <span className="text-xs text-muted-foreground">Loading...</span>
       </button>
     );
   }
@@ -102,14 +99,11 @@ export function UsageIndicator({ onOpenSettings }: UsageIndicatorProps) {
             <button
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className={`flex items-center gap-2.5 px-4 py-2 rounded-lg border transition-all hover:opacity-80 hover:shadow-md active:scale-95 text-muted-foreground bg-card/80 backdrop-blur-sm border-border shadow-sm ${isRefreshing ? 'opacity-70' : ''}`}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md border bg-card/80 backdrop-blur-sm hover:border-primary/50 transition-all ${isRefreshing ? 'opacity-70' : ''}`}
               aria-label="Refresh usage data"
             >
-              <RefreshCw className={`h-4 w-4 shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
-              <div className="flex flex-col items-start gap-0.5">
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Usage</span>
-                <span className="text-base font-semibold font-mono leading-none">--%</span>
-              </div>
+              <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span className="text-sm font-semibold font-mono">--%</span>
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs max-w-[200px]">
@@ -124,16 +118,20 @@ export function UsageIndicator({ onOpenSettings }: UsageIndicatorProps) {
   const maxUsage = Math.max(usage.sessionPercent, usage.weeklyPercent);
 
   const colorClasses =
-    maxUsage >= 95 ? 'border-l-red-500 bg-red-500/10 text-red-500 border-red-500/20' :
-    maxUsage >= 91 ? 'border-l-orange-500 bg-orange-500/10 text-orange-500 border-orange-500/20' :
-    maxUsage >= 71 ? 'border-l-yellow-500 bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
-    'border-l-green-500 bg-green-500/10 text-green-500 border-green-500/20';
+    maxUsage >= 95 ? 'bg-red-500/10 border-red-500/30 text-red-500' :
+    maxUsage >= 91 ? 'bg-orange-500/10 border-orange-500/30 text-orange-500' :
+    maxUsage >= 71 ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-500' :
+    'bg-green-500/10 border-green-500/30 text-green-500';
 
   // Show spinning refresh icon during refresh, otherwise show status icon
   const StatusIcon = isRefreshing ? RefreshCw :
     maxUsage >= 91 ? AlertCircle :
     maxUsage >= 71 ? TrendingUp :
     Activity;
+
+  // Determine which period to show (the one with higher usage)
+  const periodLabel = usage.sessionPercent >= usage.weeklyPercent ? '5h' : '7d';
+  const displayPercent = Math.round(Math.max(usage.sessionPercent, usage.weeklyPercent));
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -142,21 +140,12 @@ export function UsageIndicator({ onOpenSettings }: UsageIndicatorProps) {
           <button
             onClick={handleRefresh}
             disabled={isRefreshing}
-            className={`flex items-center gap-3 px-4 py-2 rounded-lg border-l-4 bg-card/80 backdrop-blur-sm shadow-sm hover:shadow-md transition-all hover:opacity-90 active:scale-95 ${colorClasses} ${isRefreshing ? 'opacity-70' : ''}`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md border bg-card/80 backdrop-blur-sm hover:border-primary/50 hover:shadow-sm transition-all ${colorClasses} ${isRefreshing ? 'opacity-70' : ''}`}
             aria-label="Claude usage status - click to refresh"
           >
-            <StatusIcon className={`h-4 w-4 shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
-            <div className="flex items-center gap-3">
-              <div className="flex flex-col items-start gap-0.5">
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wide">5h</span>
-                <span className="text-base font-semibold font-mono leading-none">{Math.round(usage.sessionPercent)}%</span>
-              </div>
-              <div className="w-px h-6 bg-border/60" />
-              <div className="flex flex-col items-start gap-0.5">
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wide">7d</span>
-                <span className="text-base font-semibold font-mono leading-none">{Math.round(usage.weeklyPercent)}%</span>
-              </div>
-            </div>
+            <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span className="text-sm font-semibold font-mono tabular-nums">{displayPercent}%</span>
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{periodLabel}</span>
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs w-72">
