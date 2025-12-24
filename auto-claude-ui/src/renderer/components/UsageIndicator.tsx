@@ -81,7 +81,7 @@ export function UsageIndicator({ onOpenSettings }: UsageIndicatorProps) {
     return (
       <button
         disabled
-        className="flex items-center gap-2 px-3 py-1.5 rounded-md border bg-card/80 backdrop-blur-sm opacity-50"
+        className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-muted-foreground bg-card/80 backdrop-blur-sm border-border opacity-50 shadow-sm"
         aria-label="Loading usage data"
       >
         <RefreshCw className="h-3.5 w-3.5 animate-spin shrink-0" />
@@ -99,7 +99,7 @@ export function UsageIndicator({ onOpenSettings }: UsageIndicatorProps) {
             <button
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md border bg-card/80 backdrop-blur-sm hover:border-primary/50 transition-all ${isRefreshing ? 'opacity-70' : ''}`}
+              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border transition-all hover:opacity-80 hover:shadow-md active:scale-95 text-muted-foreground bg-card/80 backdrop-blur-sm border-border shadow-sm ${isRefreshing ? 'opacity-70' : ''}`}
               aria-label="Refresh usage data"
             >
               <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -140,7 +140,7 @@ export function UsageIndicator({ onOpenSettings }: UsageIndicatorProps) {
           <button
             onClick={handleRefresh}
             disabled={isRefreshing}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-md border bg-card/80 backdrop-blur-sm hover:border-primary/50 hover:shadow-sm transition-all ${colorClasses} ${isRefreshing ? 'opacity-70' : ''}`}
+            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border bg-card/80 backdrop-blur-sm hover:shadow-sm transition-all ${colorClasses} ${isRefreshing ? 'opacity-70' : ''}`}
             aria-label="Claude usage status - click to refresh"
           >
             <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
