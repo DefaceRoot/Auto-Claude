@@ -13,7 +13,7 @@
 import { EventEmitter } from 'events';
 import { getClaudeProfileManager } from '../claude-profile-manager';
 import { ClaudeUsageSnapshot } from '../../shared/types/agent';
-import { calculateLocalUsage } from './local-usage-calculator';
+import { calculateLocalUsage, calculateLocalUsageWithLimits } from './local-usage-calculator';
 
 export class UsageMonitor extends EventEmitter {
   private static instance: UsageMonitor;
@@ -263,9 +263,47 @@ export class UsageMonitor extends EventEmitter {
       //   "seven_day_reset_at": "2025-01-20T12:00:00Z"
       // }
 
+      const sessionPercent = Math.round((data.five_hour_utilization || 0) * 100);
+      const weeklyPercent = Math.round((data.seven_day_utilization || 0) * 100);
+
+      // CALIBRATION: Get local usage data to learn actual limits
+      if (sessionPercent > 5 || weeklyPercent > 5) {  // Only calibrate if there's meaningful usage
+        const localUsage = await calculateLocalUsage();
+        if (localUsage && (localUsage.sessionUsage.costUSD > 0 || localUsage.weeklyUsage.costUSD > 0)) {
+          const profileManager = getClaudeProfileManager();
+
+          // Only calibrate if percentages are significantly different from estimates
+          // This prevents calibration from running when estimates are already close
+          const estimatedSessionPercent = Math.round((localUsage.sessionUsage.costUSD / 0.85) * 100);
+          const estimatedWeeklyPercent = Math.round((localUsage.weeklyUsage.costUSD / 28.0) * 100);
+
+          const sessionDiff = Math.abs(sessionPercent - estimatedSessionPercent);
+          const weeklyDiff = Math.abs(weeklyPercent - estimatedWeeklyPercent);
+
+          if (sessionDiff > 10 || weeklyDiff > 10) {  // More than 10% difference
+            console.warn('[UsageMonitor] Calibrating limits - estimates are off by:', {
+              sessionDiff,
+              weeklyDiff,
+              apiSession: sessionPercent,
+              apiWeekly: weeklyPercent,
+              localSessionCost: localUsage.sessionUsage.costUSD.toFixed(4),
+              localWeeklyCost: localUsage.weeklyUsage.costUSD.toFixed(4)
+            });
+
+            profileManager.updateUsageCalibration(
+              profileId,
+              localUsage.sessionUsage.costUSD,
+              sessionPercent,
+              localUsage.weeklyUsage.costUSD,
+              weeklyPercent
+            );
+          }
+        }
+      }
+
       return {
-        sessionPercent: Math.round((data.five_hour_utilization || 0) * 100),
-        weeklyPercent: Math.round((data.seven_day_utilization || 0) * 100),
+        sessionPercent,
+        weeklyPercent,
         sessionResetTime: this.formatResetTime(data.five_hour_reset_at),
         weeklyResetTime: this.formatResetTime(data.seven_day_reset_at),
         profileId,
@@ -292,19 +330,28 @@ export class UsageMonitor extends EventEmitter {
   ): Promise<ClaudeUsageSnapshot | null> {
     try {
       console.warn('[UsageMonitor] Attempting local file-based usage calculation');
-      const localUsage = await calculateLocalUsage();
+
+      const profileManager = getClaudeProfileManager();
+      const calibratedLimits = profileManager.getCalibratedLimits(profileId);
+
+      console.warn('[UsageMonitor] Using calibrated limits:', {
+        profileId,
+        sessionLimit: calibratedLimits.sessionCostUSD.toFixed(2),
+        weeklyLimit: calibratedLimits.weeklyCostUSD.toFixed(2),
+        source: profileManager.getProfile(profileId)?.usageCalibration?.sampleCount
+          ? `calibrated (${profileManager.getProfile(profileId)!.usageCalibration!.sampleCount} samples)`
+          : 'conservative estimate'
+      });
+
+      const localUsage = await calculateLocalUsageWithLimits(
+        calibratedLimits.sessionCostUSD,
+        calibratedLimits.weeklyCostUSD
+      );
 
       if (!localUsage) {
         console.warn('[UsageMonitor] Local usage calculation returned null');
         return null;
       }
-
-      console.warn('[UsageMonitor] Local usage calculated:', {
-        sessionTokens: localUsage.sessionUsage.totalTokens,
-        weeklyTokens: localUsage.weeklyUsage.totalTokens,
-        sessionPercent: localUsage.sessionPercent,
-        weeklyPercent: localUsage.weeklyPercent
-      });
 
       return {
         sessionPercent: localUsage.sessionPercent,
@@ -315,10 +362,9 @@ export class UsageMonitor extends EventEmitter {
         profileName,
         fetchedAt: localUsage.fetchedAt,
         limitType: localUsage.weeklyPercent > localUsage.sessionPercent ? 'weekly' : 'session',
-        // Add token counts for display
         sessionTokens: localUsage.sessionUsage.totalTokens,
         weeklyTokens: localUsage.weeklyUsage.totalTokens,
-        isEstimated: true  // Flag that percentages are estimated, not from API
+        isEstimated: true  // Still marked as estimated since we're using local files
       };
     } catch (error) {
       console.error('[UsageMonitor] Local file analysis failed:', error);

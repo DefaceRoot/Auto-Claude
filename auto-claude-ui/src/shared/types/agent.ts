@@ -68,6 +68,22 @@ export interface ClaudeRateLimitEvent {
 }
 
 /**
+ * Calibrated rate limits learned from comparing local calculations against API data
+ * When we have both local cost USD and API percentage, we can calculate the actual limit:
+ * actualLimit = (localCostUSD / apiPercentage) * 100
+ */
+export interface UsageLimitCalibration {
+  /** Calibrated session limit in USD (learned from API) */
+  sessionCostUSD: number;
+  /** Calibrated weekly limit in USD (learned from API) */
+  weeklyCostUSD: number;
+  /** When this calibration was last updated */
+  lastCalibratedAt: Date;
+  /** How many data points were used to calculate this (confidence metric) */
+  sampleCount: number;
+}
+
+/**
  * A Claude Code subscription profile for multi-account support.
  * Profiles store OAuth tokens for instant switching without browser re-auth.
  */
@@ -101,6 +117,8 @@ export interface ClaudeProfile {
   usage?: ClaudeUsageData;
   /** Recent rate limit events for this profile */
   rateLimitEvents?: ClaudeRateLimitEvent[];
+  /** Calibrated usage limits learned from API comparisons */
+  usageCalibration?: UsageLimitCalibration;
 }
 
 /**

@@ -529,6 +529,73 @@ export class ClaudeProfileManager {
   getProfilesSortedByAvailability(): ClaudeProfile[] {
     return getProfilesSortedByAvailabilityImpl(this.data.profiles);
   }
+
+  /**
+   * Update calibration data for a profile based on API comparison
+   * @param profileId Profile to update
+   * @param sessionCostUSD Actual session cost from local calculation
+   * @param sessionPercent Actual session percentage from API
+   * @param weeklyCostUSD Actual weekly cost from local calculation
+   * @param weeklyPercent Actual weekly percentage from API
+   */
+  updateUsageCalibration(
+    profileId: string,
+    sessionCostUSD: number,
+    sessionPercent: number,
+    weeklyCostUSD: number,
+    weeklyPercent: number
+  ): void {
+    const profile = this.getProfile(profileId);
+    if (!profile) return;
+
+    // Calculate actual limits: if we used $X and that's Y%, then 100% = $(X / Y * 100)
+    const calculatedSessionLimit = (sessionCostUSD / sessionPercent) * 100;
+    const calculatedWeeklyLimit = (weeklyCostUSD / weeklyPercent) * 100;
+
+    const existing = profile.usageCalibration;
+
+    // Use weighted average to smooth out fluctuations
+    // New values get 20% weight, existing get 80% (if we have enough samples)
+    const weight = existing && existing.sampleCount >= 5 ? 0.2 : 1.0;
+
+    profile.usageCalibration = {
+      sessionCostUSD: existing
+        ? (existing.sessionCostUSD * (1 - weight)) + (calculatedSessionLimit * weight)
+        : calculatedSessionLimit,
+      weeklyCostUSD: existing
+        ? (existing.weeklyCostUSD * (1 - weight)) + (calculatedWeeklyLimit * weight)
+        : calculatedWeeklyLimit,
+      lastCalibratedAt: new Date(),
+      sampleCount: (existing?.sampleCount ?? 0) + 1
+    };
+
+    this.save();
+  }
+
+  /**
+   * Get calibrated limits for a profile, or defaults if not calibrated
+   */
+  getCalibratedLimits(profileId: string): { sessionCostUSD: number; weeklyCostUSD: number } {
+    const profile = this.getProfile(profileId);
+    const calibration = profile?.usageCalibration;
+
+    // Check if calibration is still fresh (within 30 days)
+    const isFresh = calibration && calibration.lastCalibratedAt >
+      new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    if (isFresh && calibration && calibration.sampleCount >= 3) {
+      return {
+        sessionCostUSD: calibration.sessionCostUSD,
+        weeklyCostUSD: calibration.weeklyCostUSD
+      };
+    }
+
+    // Fallback to conservative estimates
+    return {
+      sessionCostUSD: 5.0,   // Conservative: higher than actual to avoid false alarms
+      weeklyCostUSD: 50.0    // Conservative: higher than actual to avoid false alarms
+    };
+  }
 }
 
 // Singleton instance

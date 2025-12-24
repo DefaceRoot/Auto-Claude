@@ -423,10 +423,10 @@ export async function calculateLocalUsage(
         };
 
         const totalTokensInEvent =
-          actualUsage.input_tokens +
-          actualUsage.output_tokens +
-          actualUsage.cache_read_input_tokens +
-          actualUsage.cache_creation_input_tokens;
+          (actualUsage.input_tokens || 0) +
+          (actualUsage.output_tokens || 0) +
+          (actualUsage.cache_read_input_tokens || 0) +
+          (actualUsage.cache_creation_input_tokens || 0);
 
         if (totalTokensInEvent === 0) {
           continue;
@@ -495,6 +495,7 @@ export async function calculateLocalUsage(
     weeklyPercent,
     sessionEvents: sessionUsage.eventCount,
     weeklyEvents: weeklyUsage.eventCount,
+    source: 'hardcoded estimates (consider calibration)'
   });
 
   return {
@@ -505,5 +506,47 @@ export async function calculateLocalUsage(
     sessionResetTime,
     weeklyResetTime,
     fetchedAt: now,
+  };
+}
+
+/**
+ * Calculate usage from local JSONL files using custom limits
+ * @param sessionCostUSD Session limit in USD (overrides default estimate)
+ * @param weeklyCostUSD Weekly limit in USD (overrides default estimate)
+ * @param sessionHours Hours to look back for session usage (default: 5)
+ * @param weeklyDays Days to look back for weekly usage (default: 7)
+ */
+export async function calculateLocalUsageWithLimits(
+  sessionCostUSD: number,
+  weeklyCostUSD: number,
+  sessionHours: number = 5,
+  weeklyDays: number = 7
+): Promise<LocalUsageSnapshot | null> {
+  // Reuse the existing calculation logic
+  const snapshot = await calculateLocalUsage(sessionHours, weeklyDays);
+  if (!snapshot) return null;
+
+  // Recalculate percentages using provided limits
+  const sessionPercent = Math.min(100, Math.round((snapshot.sessionUsage.costUSD / sessionCostUSD) * 100));
+  const weeklyPercent = Math.min(100, Math.round((snapshot.weeklyUsage.costUSD / weeklyCostUSD) * 100));
+
+  console.warn('[LocalUsageCalculator] Usage calculated (with custom limits):', {
+    sessionTokens: snapshot.sessionUsage.totalTokens,
+    weeklyTokens: snapshot.weeklyUsage.totalTokens,
+    sessionCostUSD: snapshot.sessionUsage.costUSD.toFixed(4),
+    weeklyCostUSD: snapshot.weeklyUsage.costUSD.toFixed(4),
+    sessionLimitUSD: sessionCostUSD.toFixed(2),
+    weeklyLimitUSD: weeklyCostUSD.toFixed(2),
+    sessionPercent,
+    weeklyPercent,
+    sessionEvents: snapshot.sessionUsage.eventCount,
+    weeklyEvents: snapshot.weeklyUsage.eventCount,
+    source: 'custom limits (from calibration or conservative fallback)'
+  });
+
+  return {
+    ...snapshot,
+    sessionPercent,
+    weeklyPercent
   };
 }
