@@ -1,0 +1,11 @@
+# Auto-Build Framework Optional Dependencies
+# These enhance functionality but are not required
+
+# Memory Integration - LadybugDB (embedded graph database)
+# Requires Python 3.12+ and Rust compiler on some platforms
+# If installation fails, Auto-Claude will work without Graphiti memory
+real_ladybug>=0.13.0; python_version >= "3.12"
+graphiti-core>=0.5.0; python_version >= "3.12"
+
+# Google AI (optional - for Gemini LLM and embeddings)
+google-generativeai>=0.8.0

@@ -44,6 +44,7 @@ export interface TaskExecutionOptions {
   parallel?: boolean;
   workers?: number;
   baseBranch?: string;
+  skipQA?: boolean;  // Skip QA validation (for Quick Mode)
 }
 
 export interface SpecCreationMetadata {

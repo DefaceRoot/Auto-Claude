@@ -9,6 +9,7 @@ export interface EnvironmentVars {
 export interface GlobalSettings {
   autoBuildPath?: string;
   globalOpenAIApiKey?: string;
+  globalZaiApiKey?: string;
 }
 
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');

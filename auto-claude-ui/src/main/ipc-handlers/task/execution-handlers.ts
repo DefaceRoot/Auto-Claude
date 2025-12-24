@@ -1,20 +1,53 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC_CHANNELS, AUTO_BUILD_PATHS, getSpecsDir } from '../../../shared/constants';
 import type { IPCResult, TaskStartOptions, TaskStatus } from '../../../shared/types';
+import type { AgentFramework } from '../../../shared/types/settings';
 import path from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { spawnSync } from 'child_process';
 import { AgentManager } from '../../agent';
+import { PythonEnvManager } from '../../python-env-manager';
 import { fileWatcher } from '../../file-watcher';
 import { findTaskAndProject } from './shared';
 import { checkGitStatus } from '../../project-initializer';
 import { getClaudeProfileManager } from '../../claude-profile-manager';
 
 /**
+ * Generate a minimal spec.md file for Quick Mode (skips full spec creation pipeline)
+ * This creates a simple spec from the task description that the planner can use
+ */
+function generateMinimalSpec(specDir: string, title: string, description: string): void {
+  const specContent = `# ${title || 'Task'}
+
+## Overview
+${description || 'No description provided.'}
+
+## Quick Mode
+This spec was auto-generated for Quick Mode execution.
+Planning and coding phases will follow.
+
+## Acceptance Criteria
+- Feature implementation as described in the overview
+`;
+
+  const specPath = path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE);
+  writeFileSync(specPath, specContent);
+  console.warn('[Quick Mode] Generated minimal spec.md at:', specPath);
+}
+
+/**
+ * Get the framework for a task (defaults to 'auto-claude' for backward compatibility)
+ */
+function getTaskFramework(task: { metadata?: { framework?: AgentFramework } }): AgentFramework {
+  return task.metadata?.framework || 'auto-claude';
+}
+
+/**
  * Register task execution handlers (start, stop, review, status management, recovery)
  */
 export function registerTaskExecutionHandlers(
   agentManager: AgentManager,
+  pythonEnvManager: PythonEnvManager,
   getMainWindow: () => BrowserWindow | null
 ): void {
   /**
@@ -27,6 +60,17 @@ export function registerTaskExecutionHandlers(
       const mainWindow = getMainWindow();
       if (!mainWindow) {
         console.warn('[TASK_START] No main window found');
+        return;
+      }
+
+      // Check if Python environment is ready before starting
+      if (!pythonEnvManager.isEnvReady()) {
+        console.warn('[TASK_START] Python environment not ready yet, cannot start task');
+        mainWindow.webContents.send(
+          IPC_CHANNELS.TASK_ERROR,
+          taskId,
+          'Python environment is still initializing. Please wait a moment and try again.'
+        );
         return;
       }
 
@@ -96,19 +140,42 @@ export function registerTaskExecutionHandlers(
       const needsSpecCreation = !hasSpec;
       const needsImplementation = hasSpec && task.subtasks.length === 0;
 
-      console.warn('[TASK_START] hasSpec:', hasSpec, 'needsSpecCreation:', needsSpecCreation, 'needsImplementation:', needsImplementation);
+      // Get task framework (Quick Mode or Auto Claude)
+      const taskFramework = getTaskFramework(task);
+      const isQuickMode = taskFramework === 'quick-mode';
+
+      console.warn('[TASK_START] hasSpec:', hasSpec, 'needsSpecCreation:', needsSpecCreation, 'needsImplementation:', needsImplementation, 'framework:', taskFramework);
 
       // Get base branch from project settings for worktree creation
       const baseBranch = project.settings?.mainBranch;
 
       if (needsSpecCreation) {
-        // No spec file - need to run spec_runner.py to create the spec
-        const taskDescription = task.description || task.title;
-        console.warn('[TASK_START] Starting spec creation for:', task.specId, 'in:', specDir);
+        if (isQuickMode) {
+          // Quick Mode: Generate minimal spec and start task execution (skip full spec pipeline)
+          console.warn('[TASK_START] Quick Mode: Generating minimal spec for:', task.specId);
+          generateMinimalSpec(specDir, task.title, task.description);
 
-        // Start spec creation process - pass the existing spec directory
-        // so spec_runner uses it instead of creating a new one
-        agentManager.startSpecCreation(task.specId, project.path, taskDescription, specDir, task.metadata);
+          // Start task execution with skipQA flag (Quick Mode skips QA)
+          agentManager.startTaskExecution(
+            taskId,
+            project.path,
+            task.specId,
+            {
+              parallel: false,
+              workers: 1,
+              baseBranch,
+              skipQA: true  // Quick Mode skips QA review
+            }
+          );
+        } else {
+          // Auto Claude (Full): Run full spec creation pipeline
+          const taskDescription = task.description || task.title;
+          console.warn('[TASK_START] Starting spec creation for:', task.specId, 'in:', specDir);
+
+          // Start spec creation process - pass the existing spec directory
+          // so spec_runner uses it instead of creating a new one
+          agentManager.startSpecCreation(task.specId, project.path, taskDescription, specDir, task.metadata);
+        }
       } else if (needsImplementation) {
         // Spec exists but no subtasks - run run.py to create implementation plan and execute
         // Read the spec.md to get the task description
@@ -129,7 +196,8 @@ export function registerTaskExecutionHandlers(
           {
             parallel: false,  // Sequential for planning phase
             workers: 1,
-            baseBranch
+            baseBranch,
+            skipQA: isQuickMode  // Quick Mode skips QA review
           }
         );
       } else {
@@ -144,7 +212,8 @@ export function registerTaskExecutionHandlers(
           {
             parallel: false,
             workers: 1,
-            baseBranch
+            baseBranch,
+            skipQA: isQuickMode  // Quick Mode skips QA review
           }
         );
       }
@@ -416,6 +485,19 @@ export function registerTaskExecutionHandlers(
         if (status === 'in_progress' && !agentManager.isRunning(taskId)) {
           const mainWindow = getMainWindow();
 
+          // Check if Python environment is ready before auto-starting
+          if (!pythonEnvManager.isEnvReady()) {
+            console.warn('[TASK_UPDATE_STATUS] Python environment not ready, cannot auto-start task');
+            if (mainWindow) {
+              mainWindow.webContents.send(
+                IPC_CHANNELS.TASK_ERROR,
+                taskId,
+                'Python environment is still initializing. Please wait a moment and try again.'
+              );
+            }
+            return { success: false, error: 'Python environment not ready' };
+          }
+
           // Check git status before auto-starting
           const gitStatusCheck = checkGitStatus(project.path);
           if (!gitStatusCheck.isGitRepo || !gitStatusCheck.hasCommits) {
@@ -455,13 +537,33 @@ export function registerTaskExecutionHandlers(
           const needsSpecCreation = !hasSpec;
           const needsImplementation = hasSpec && task.subtasks.length === 0;
 
-          console.warn('[TASK_UPDATE_STATUS] hasSpec:', hasSpec, 'needsSpecCreation:', needsSpecCreation, 'needsImplementation:', needsImplementation);
+          // Get task framework (Quick Mode or Auto Claude)
+          const taskFramework = getTaskFramework(task);
+          const isQuickMode = taskFramework === 'quick-mode';
+
+          console.warn('[TASK_UPDATE_STATUS] hasSpec:', hasSpec, 'needsSpecCreation:', needsSpecCreation, 'needsImplementation:', needsImplementation, 'framework:', taskFramework);
 
           if (needsSpecCreation) {
-            // No spec file - need to run spec_runner.py to create the spec
-            const taskDescription = task.description || task.title;
-            console.warn('[TASK_UPDATE_STATUS] Starting spec creation for:', task.specId);
-            agentManager.startSpecCreation(task.specId, project.path, taskDescription, specDir, task.metadata);
+            if (isQuickMode) {
+              // Quick Mode: Generate minimal spec and start task execution
+              console.warn('[TASK_UPDATE_STATUS] Quick Mode: Generating minimal spec for:', task.specId);
+              generateMinimalSpec(specDir, task.title, task.description);
+              agentManager.startTaskExecution(
+                taskId,
+                project.path,
+                task.specId,
+                {
+                  parallel: false,
+                  workers: 1,
+                  skipQA: true
+                }
+              );
+            } else {
+              // Full mode: Run spec creation pipeline
+              const taskDescription = task.description || task.title;
+              console.warn('[TASK_UPDATE_STATUS] Starting spec creation for:', task.specId);
+              agentManager.startSpecCreation(task.specId, project.path, taskDescription, specDir, task.metadata);
+            }
           } else if (needsImplementation) {
             // Spec exists but no subtasks - run run.py to create implementation plan and execute
             console.warn('[TASK_UPDATE_STATUS] Starting task execution (no subtasks) for:', task.specId);
@@ -471,7 +573,8 @@ export function registerTaskExecutionHandlers(
               task.specId,
               {
                 parallel: false,
-                workers: 1
+                workers: 1,
+                skipQA: isQuickMode
               }
             );
           } else {
@@ -484,7 +587,8 @@ export function registerTaskExecutionHandlers(
               task.specId,
               {
                 parallel: false,
-                workers: 1
+                workers: 1,
+                skipQA: isQuickMode
               }
             );
           }
@@ -689,6 +793,21 @@ export function registerTaskExecutionHandlers(
             };
           }
 
+          // Check if Python environment is ready before auto-restarting
+          if (!pythonEnvManager.isEnvReady()) {
+            console.warn('[Recovery] Python environment not ready, cannot auto-restart task');
+            return {
+              success: true,
+              data: {
+                taskId,
+                recovered: true,
+                newStatus,
+                message: 'Task recovered but cannot restart: Python environment is still initializing.',
+                autoRestarted: false
+              }
+            };
+          }
+
           try {
             // Set status to in_progress for the restart
             newStatus = 'in_progress';
@@ -711,11 +830,31 @@ export function registerTaskExecutionHandlers(
             const hasSpec = existsSync(specFilePath);
             const needsSpecCreation = !hasSpec;
 
+            // Get task framework (Quick Mode or Auto Claude)
+            const recoveryTaskFramework = getTaskFramework(task);
+            const isQuickModeRecovery = recoveryTaskFramework === 'quick-mode';
+
             if (needsSpecCreation) {
-              // No spec file - need to run spec_runner.py to create the spec
-              const taskDescription = task.description || task.title;
-              console.warn(`[Recovery] Starting spec creation for: ${task.specId}`);
-              agentManager.startSpecCreation(task.specId, project.path, taskDescription, specDirForWatcher, task.metadata);
+              if (isQuickModeRecovery) {
+                // Quick Mode: Generate minimal spec and start task execution
+                console.warn(`[Recovery] Quick Mode: Generating minimal spec for: ${task.specId}`);
+                generateMinimalSpec(specDirForWatcher, task.title, task.description);
+                agentManager.startTaskExecution(
+                  taskId,
+                  project.path,
+                  task.specId,
+                  {
+                    parallel: false,
+                    workers: 1,
+                    skipQA: true
+                  }
+                );
+              } else {
+                // Full mode: Run spec creation pipeline
+                const taskDescription = task.description || task.title;
+                console.warn(`[Recovery] Starting spec creation for: ${task.specId}`);
+                agentManager.startSpecCreation(task.specId, project.path, taskDescription, specDirForWatcher, task.metadata);
+              }
             } else {
               // Spec exists - run task execution
               console.warn(`[Recovery] Starting task execution for: ${task.specId}`);
@@ -725,7 +864,8 @@ export function registerTaskExecutionHandlers(
                 task.specId,
                 {
                   parallel: false,
-                  workers: 1
+                  workers: 1,
+                  skipQA: isQuickModeRecovery
                 }
               );
             }

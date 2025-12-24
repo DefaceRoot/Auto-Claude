@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import path from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { AgentState } from './agent-state';
 import { AgentEvents } from './agent-events';
 import { AgentProcessManager } from './agent-process';
@@ -12,6 +12,8 @@ import {
   RoadmapConfig
 } from './types';
 import type { IdeationConfig } from '../../shared/types';
+import { isGLMModel } from '../../shared/constants/models';
+import { loadGlobalSettings } from '../ipc-handlers/context/utils';
 
 /**
  * Main AgentManager - orchestrates agent process lifecycle
@@ -84,6 +86,86 @@ export class AgentManager extends EventEmitter {
   }
 
   /**
+   * Validate that Z.ai API key is configured if GLM models are being used.
+   * Returns an error message if validation fails, null if valid.
+   */
+  private validateGLMAuth(metadata?: SpecCreationMetadata): string | null {
+    const settings = loadGlobalSettings();
+    const hasZaiKey = !!settings.globalZaiApiKey;
+
+    // Check all phase models for GLM usage
+    const modelsToCheck: string[] = [];
+
+    if (metadata?.isAutoProfile && metadata.phaseModels) {
+      // Auto profile: check all phase models
+      modelsToCheck.push(
+        metadata.phaseModels.spec,
+        metadata.phaseModels.planning,
+        metadata.phaseModels.coding,
+        metadata.phaseModels.qa
+      );
+    } else if (metadata?.model) {
+      // Single model: just check that one
+      modelsToCheck.push(metadata.model);
+    }
+
+    // Find any GLM models
+    const glmModels = modelsToCheck.filter(model => isGLMModel(model));
+
+    if (glmModels.length > 0 && !hasZaiKey) {
+      const modelList = [...new Set(glmModels)].join(', ');
+      return `Z.ai API key required for GLM models (${modelList}). Please configure your Z.ai API key in Settings > Integrations.`;
+    }
+
+    return null;
+  }
+
+  /**
+   * Get the model from task_metadata.json for a spec and specific phase.
+   * Returns the model shorthand (e.g., 'glm-4.7') for Z.ai env var injection.
+   *
+   * @param projectPath - Path to the project
+   * @param specId - Spec ID
+   * @param phase - Execution phase: 'planning' (default for run.py), 'coding', or 'qa'
+   */
+  private getTaskModelForPhase(
+    projectPath: string,
+    specId: string,
+    phase: 'planning' | 'coding' | 'qa' = 'planning'
+  ): string | undefined {
+    try {
+      const specDir = path.join(projectPath, '.auto-claude', 'specs', specId);
+      const metadataPath = path.join(specDir, 'task_metadata.json');
+
+      if (!existsSync(metadataPath)) {
+        return undefined;
+      }
+
+      const metadata = JSON.parse(readFileSync(metadataPath, 'utf-8'));
+
+      // For auto profile, use the phase-specific model
+      // For single model profile, use the model directly
+      if (metadata.isAutoProfile && metadata.phaseModels) {
+        return metadata.phaseModels[phase];
+      }
+
+      return metadata.model;
+    } catch (err) {
+      console.warn('[AgentManager] Failed to read task metadata for model:', err);
+      return undefined;
+    }
+  }
+
+  /**
+   * Get the model from task_metadata.json for a spec.
+   * Returns the model shorthand (e.g., 'glm-4.7') for Z.ai env var injection.
+   * Defaults to the planning phase model for run.py.
+   */
+  private getTaskModel(projectPath: string, specId: string): string | undefined {
+    return this.getTaskModelForPhase(projectPath, specId, 'planning');
+  }
+
+  /**
    * Start spec creation process
    */
   startSpecCreation(
@@ -97,6 +179,13 @@ export class AgentManager extends EventEmitter {
     const profileManager = getClaudeProfileManager();
     if (!profileManager.hasValidAuth()) {
       this.emit('error', taskId, 'Claude authentication required. Please authenticate in Settings > Claude Profiles before starting tasks.');
+      return;
+    }
+
+    // Pre-flight Z.ai auth check: Verify Z.ai API key is configured if using GLM models
+    const glmAuthError = this.validateGLMAuth(metadata);
+    if (glmAuthError) {
+      this.emit('error', taskId, glmAuthError);
       return;
     }
 
@@ -148,8 +237,13 @@ export class AgentManager extends EventEmitter {
     // Store context for potential restart
     this.storeTaskContext(taskId, projectPath, '', {}, true, taskDescription, specDir, metadata);
 
+    // Determine the model for environment injection (Z.ai base URL for GLM models)
+    const model = metadata?.isAutoProfile && metadata.phaseModels
+      ? metadata.phaseModels.spec
+      : metadata?.model;
+
     // Note: This is spec-creation but it chains to task-execution via run.py
-    this.processManager.spawnProcess(taskId, autoBuildSource, args, combinedEnv, 'task-execution');
+    this.processManager.spawnProcess(taskId, autoBuildSource, args, combinedEnv, 'task-execution', model);
   }
 
   /**
@@ -198,6 +292,11 @@ export class AgentManager extends EventEmitter {
       args.push('--base-branch', options.baseBranch);
     }
 
+    // Skip QA validation for Quick Mode framework
+    if (options.skipQA) {
+      args.push('--skip-qa');
+    }
+
     // Note: --parallel was removed from run.py CLI - parallel execution is handled internally by the agent
     // The options.parallel and options.workers are kept for future use or logging purposes
     // Note: Model configuration is read from task_metadata.json by the Python scripts,
@@ -206,7 +305,11 @@ export class AgentManager extends EventEmitter {
     // Store context for potential restart
     this.storeTaskContext(taskId, projectPath, specId, options, false);
 
-    this.processManager.spawnProcess(taskId, autoBuildSource, args, combinedEnv, 'task-execution');
+    // Get the model from task metadata for Z.ai env var injection
+    // This is needed because GLM models require ANTHROPIC_BASE_URL to be set to Z.ai's endpoint
+    const model = this.getTaskModel(projectPath, specId);
+
+    this.processManager.spawnProcess(taskId, autoBuildSource, args, combinedEnv, 'task-execution', model);
   }
 
   /**
@@ -236,7 +339,11 @@ export class AgentManager extends EventEmitter {
 
     const args = [runPath, '--spec', specId, '--project-dir', projectPath, '--qa'];
 
-    this.processManager.spawnProcess(taskId, autoBuildSource, args, combinedEnv, 'qa-process');
+    // Get the model from task metadata for Z.ai env var injection
+    // For QA, we need to check if it's an auto profile and use the qa phase model
+    const model = this.getTaskModelForPhase(projectPath, specId, 'qa');
+
+    this.processManager.spawnProcess(taskId, autoBuildSource, args, combinedEnv, 'qa-process', model);
   }
 
   /**

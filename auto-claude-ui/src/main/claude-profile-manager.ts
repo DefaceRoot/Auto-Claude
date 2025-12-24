@@ -289,9 +289,18 @@ export class ClaudeProfileManager {
   getProfileToken(profileId: string): string | undefined {
     const profile = this.getProfile(profileId);
     if (!profile?.oauthToken) {
+      console.warn('[ClaudeProfileManager] getProfileToken: no oauthToken for profile', profileId);
       return undefined;
     }
-    return decryptToken(profile.oauthToken);
+    const decrypted = decryptToken(profile.oauthToken);
+    console.warn('[ClaudeProfileManager] getProfileToken:', {
+      profileId,
+      encryptedLength: profile.oauthToken.length,
+      decryptedLength: decrypted?.length ?? 0,
+      decryptedPrefix: decrypted?.substring(0, 15) + '...'
+    });
+    // Return undefined if decryption returned empty string
+    return decrypted || undefined;
   }
 
   /**

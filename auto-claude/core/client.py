@@ -18,7 +18,7 @@ from auto_claude_tools import (
 )
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 from claude_agent_sdk.types import HookMatcher
-from core.auth import get_sdk_env_vars, require_auth_token
+from core.auth import get_sdk_env_vars_for_model, require_auth_token
 from linear_updater import is_linear_enabled
 from prompts_pkg.project_context import detect_project_capabilities, load_project_index
 from security import bash_security_hook
@@ -166,7 +166,8 @@ def create_client(
     os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
 
     # Collect env vars to pass to SDK (ANTHROPIC_BASE_URL, etc.)
-    sdk_env = get_sdk_env_vars()
+    # Uses model-aware function to set Z.ai base URL for GLM models
+    sdk_env = get_sdk_env_vars_for_model(model)
 
     # Check if Linear integration is enabled
     linear_enabled = is_linear_enabled()

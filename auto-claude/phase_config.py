@@ -11,11 +11,90 @@ from pathlib import Path
 from typing import Literal, TypedDict
 
 # Model shorthand to full model ID mapping
+# Note: GLM models use Claude model IDs because Z.ai's API expects Claude IDs
+# and handles the GLM mapping server-side
 MODEL_ID_MAP: dict[str, str] = {
+    # Claude models (Anthropic)
     "opus": "claude-opus-4-5-20251101",
     "sonnet": "claude-sonnet-4-5-20250929",
     "haiku": "claude-haiku-4-5-20251001",
+    # GLM models (Z.ai) - mapped to Claude IDs for API compatibility
+    # Z.ai routes these to GLM-4.7/GLM-4.5-Air on their backend
+    "glm-4.7": "claude-opus-4-5-20251101",  # Opus tier → GLM-4.7
+    "glm-4.5-air": "claude-haiku-4-5-20251001",  # Haiku tier → GLM-4.5-Air
 }
+
+# Provider mapping for dynamic base URL switching
+# Maps model shorthand to provider name ('anthropic' or 'zai')
+MODEL_PROVIDERS: dict[str, str] = {
+    "opus": "anthropic",
+    "sonnet": "anthropic",
+    "haiku": "anthropic",
+    "glm-4.7": "zai",
+    "glm-4.5-air": "zai",
+}
+
+
+def get_model_provider(model: str) -> str:
+    """
+    Get the provider for a model (anthropic or zai).
+
+    Args:
+        model: Model shorthand or full model ID
+
+    Returns:
+        Provider name ('anthropic' or 'zai')
+    """
+    # Check direct mapping (shorthand like 'glm-4.7' or 'opus')
+    if model in MODEL_PROVIDERS:
+        return MODEL_PROVIDERS[model]
+
+    # Check if it's a full model ID
+    # Note: Multiple shorthands can map to the same full ID (e.g., 'opus' and 'glm-4.7'
+    # both map to 'claude-opus-4-5-20251101'). In this case, we can't determine the
+    # provider from just the full model ID. Return 'anthropic' as the safe default.
+    #
+    # For GLM model detection to work correctly with full model IDs, the caller should:
+    # 1. Use the original shorthand when possible, OR
+    # 2. Check environment variables (ANTHROPIC_BASE_URL) set by the UI
+    for short, full in MODEL_ID_MAP.items():
+        if model == full and short in MODEL_PROVIDERS:
+            return MODEL_PROVIDERS[short]
+
+    # Default to anthropic
+    return "anthropic"
+
+
+def is_glm_model(model: str) -> bool:
+    """
+    Check if a model is a GLM model (uses Z.ai API).
+
+    Detection methods (in order):
+    1. Direct shorthand check (e.g., 'glm-4.7')
+    2. Environment variable check (ZAI_API_KEY or ANTHROPIC_BASE_URL pointing to Z.ai)
+
+    Note: Full model IDs like 'claude-opus-4-5-20251101' are ambiguous since they
+    map to both Claude and GLM models. In this case, we rely on environment variables.
+
+    Args:
+        model: Model shorthand or full model ID
+
+    Returns:
+        True if model uses Z.ai API, False otherwise
+    """
+    import os
+
+    # Check direct shorthand mapping
+    if get_model_provider(model) == "zai":
+        return True
+
+    # Check environment for Z.ai configuration
+    # This handles cases where model is a full ID but Z.ai is configured
+    base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
+    if "z.ai" in base_url.lower():
+        return True
+
+    return False
 
 # Thinking level to budget tokens mapping (None = no extended thinking)
 # Values must match auto-claude-ui/src/shared/constants/models.ts THINKING_BUDGET_MAP

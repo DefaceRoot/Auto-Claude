@@ -11,7 +11,7 @@ export const DEFAULT_APP_SETTINGS = {
   theme: 'system' as const,
   colorTheme: 'default' as const,
   defaultModel: 'opus',
-  agentFramework: 'auto-claude',
+  agentFramework: 'auto-claude' as const,
   pythonPath: undefined as string | undefined,
   autoBuildPath: undefined as string | undefined,
   autoUpdateAutoBuild: true,

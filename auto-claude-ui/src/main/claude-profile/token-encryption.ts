@@ -10,15 +10,24 @@ import { safeStorage } from 'electron';
  * Returns base64-encoded encrypted data, or the raw token if encryption unavailable.
  */
 export function encryptToken(token: string): string {
+  const encryptionAvailable = safeStorage.isEncryptionAvailable();
+  console.warn('[TokenEncryption] encryptToken:', {
+    tokenLength: token.length,
+    encryptionAvailable
+  });
+
   try {
-    if (safeStorage.isEncryptionAvailable()) {
+    if (encryptionAvailable) {
       const encrypted = safeStorage.encryptString(token);
-      // Prefix with 'enc:' to identify encrypted tokens
-      return 'enc:' + encrypted.toString('base64');
+      const result = 'enc:' + encrypted.toString('base64');
+      console.warn('[TokenEncryption] Token encrypted successfully, result length:', result.length);
+      return result;
     }
   } catch (error) {
-    console.warn('[TokenEncryption] Encryption not available, storing token as-is:', error);
+    console.error('[TokenEncryption] Encryption failed:', error);
   }
+
+  console.warn('[TokenEncryption] Storing token unencrypted (encryption not available)');
   return token;
 }
 
@@ -26,16 +35,32 @@ export function encryptToken(token: string): string {
  * Decrypt a token. Handles both encrypted (enc:...) and legacy plain tokens.
  */
 export function decryptToken(storedToken: string): string {
+  const isEncrypted = storedToken.startsWith('enc:');
+  const encryptionAvailable = safeStorage.isEncryptionAvailable();
+
+  console.warn('[TokenEncryption] decryptToken:', {
+    storedTokenLength: storedToken.length,
+    isEncrypted,
+    encryptionAvailable
+  });
+
   try {
-    if (storedToken.startsWith('enc:') && safeStorage.isEncryptionAvailable()) {
+    if (isEncrypted && encryptionAvailable) {
       const encryptedData = Buffer.from(storedToken.slice(4), 'base64');
-      return safeStorage.decryptString(encryptedData);
+      const decrypted = safeStorage.decryptString(encryptedData);
+      console.warn('[TokenEncryption] Token decrypted successfully, length:', decrypted.length);
+      return decrypted;
+    } else if (isEncrypted && !encryptionAvailable) {
+      console.error('[TokenEncryption] Token is encrypted but encryption is not available!');
+      return ''; // Can't decrypt - encryption API not available
     }
   } catch (error) {
     console.error('[TokenEncryption] Failed to decrypt token:', error);
     return ''; // Return empty string on decryption failure
   }
+
   // Return as-is for legacy unencrypted tokens
+  console.warn('[TokenEncryption] Token is unencrypted, returning as-is');
   return storedToken;
 }
 

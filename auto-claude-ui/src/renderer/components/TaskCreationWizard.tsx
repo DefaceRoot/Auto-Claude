@@ -34,7 +34,7 @@ import { createTask, saveDraft, loadDraft, clearDraft, isDraftEmpty } from '../s
 import { useProjectStore } from '../stores/project-store';
 import { cn } from '../lib/utils';
 import type { TaskCategory, TaskPriority, TaskComplexity, TaskImpact, TaskMetadata, ImageAttachment, TaskDraft, ModelType, ThinkingLevel, ReferencedFile } from '../../shared/types';
-import type { PhaseModelConfig, PhaseThinkingConfig } from '../../shared/types/settings';
+import type { PhaseModelConfig, PhaseThinkingConfig, AgentFramework } from '../../shared/types/settings';
 import {
   TASK_CATEGORY_LABELS,
   TASK_PRIORITY_LABELS,
@@ -44,7 +44,8 @@ import {
   ALLOWED_IMAGE_TYPES_DISPLAY,
   DEFAULT_AGENT_PROFILES,
   DEFAULT_PHASE_MODELS,
-  DEFAULT_PHASE_THINKING
+  DEFAULT_PHASE_THINKING,
+  AGENT_FRAMEWORKS
 } from '../../shared/constants';
 import { useSettingsStore } from '../stores/settings-store';
 
@@ -93,6 +94,9 @@ export function TaskCreationWizard({
   const [priority, setPriority] = useState<TaskPriority | ''>('');
   const [complexity, setComplexity] = useState<TaskComplexity | ''>('');
   const [impact, setImpact] = useState<TaskImpact | ''>('');
+
+  // Framework selection (defaults to global setting, locked after task creation)
+  const [framework, setFramework] = useState<AgentFramework>(settings.agentFramework || 'auto-claude');
 
   // Model configuration (initialized from selected agent profile)
   const [profileId, setProfileId] = useState<string>(settings.selectedAgentProfile || 'auto');
@@ -148,6 +152,8 @@ export function TaskCreationWizard({
         setPriority(draft.priority);
         setComplexity(draft.complexity);
         setImpact(draft.impact);
+        // Load framework from draft if present, otherwise use global setting
+        setFramework(draft.framework || settings.agentFramework || 'auto-claude');
         // Load model/thinkingLevel/profileId from draft if present, otherwise use profile defaults
         setProfileId(draft.profileId || settings.selectedAgentProfile || 'auto');
         setModel(draft.model || selectedProfile.model);
@@ -164,7 +170,8 @@ export function TaskCreationWizard({
           setShowAdvanced(true);
         }
       } else {
-        // No draft - initialize from selected profile and custom settings
+        // No draft - initialize from global settings and selected profile
+        setFramework(settings.agentFramework || 'auto-claude');
         setProfileId(settings.selectedAgentProfile || 'auto');
         setModel(selectedProfile.model);
         setThinkingLevel(selectedProfile.thinkingLevel);
@@ -172,7 +179,7 @@ export function TaskCreationWizard({
         setPhaseThinking(settings.customPhaseThinking || selectedProfile.phaseThinking || DEFAULT_PHASE_THINKING);
       }
     }
-  }, [open, projectId, settings.selectedAgentProfile, settings.customPhaseModels, settings.customPhaseThinking, selectedProfile.model, selectedProfile.thinkingLevel]);
+  }, [open, projectId, settings.agentFramework, settings.selectedAgentProfile, settings.customPhaseModels, settings.customPhaseThinking, selectedProfile.model, selectedProfile.thinkingLevel]);
 
   // Fetch branches and project default branch when dialog opens
   useEffect(() => {
@@ -230,6 +237,7 @@ export function TaskCreationWizard({
     priority,
     complexity,
     impact,
+    framework,
     profileId,
     model,
     thinkingLevel,
@@ -239,7 +247,7 @@ export function TaskCreationWizard({
     referencedFiles,
     requireReviewBeforeCoding,
     savedAt: new Date()
-  }), [projectId, title, description, category, priority, complexity, impact, profileId, model, thinkingLevel, phaseModels, phaseThinking, images, referencedFiles, requireReviewBeforeCoding]);
+  }), [projectId, title, description, category, priority, complexity, impact, framework, profileId, model, thinkingLevel, phaseModels, phaseThinking, images, referencedFiles, requireReviewBeforeCoding]);
   /**
    * Handle paste event for screenshot support
    */
@@ -613,7 +621,8 @@ export function TaskCreationWizard({
 
       // Build metadata from selected values
       const metadata: TaskMetadata = {
-        sourceType: 'manual'
+        sourceType: 'manual',
+        framework  // Framework selection (locked after task creation)
       };
 
       if (category) metadata.category = category;
@@ -659,6 +668,8 @@ export function TaskCreationWizard({
     setPriority('');
     setComplexity('');
     setImpact('');
+    // Reset framework to global setting
+    setFramework(settings.agentFramework || 'auto-claude');
     // Reset to selected profile defaults and custom settings
     setProfileId(settings.selectedAgentProfile || 'auto');
     setModel(selectedProfile.model);
@@ -878,6 +889,37 @@ export function TaskCreationWizard({
             </p>
           </div>
 
+          {/* Framework Selection */}
+          <div className="space-y-2">
+            <Label htmlFor="framework" className="text-sm font-medium">
+              Framework
+            </Label>
+            <Select
+              value={framework}
+              onValueChange={(value) => setFramework(value as AgentFramework)}
+              disabled={isCreating}
+            >
+              <SelectTrigger id="framework" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AGENT_FRAMEWORKS.map((fw) => (
+                  <SelectItem key={fw.value} value={fw.value}>
+                    <div className="flex flex-col items-start">
+                      <span>{fw.label}</span>
+                      <span className="text-xs text-muted-foreground">{fw.description}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {framework === 'quick-mode'
+                ? 'Quick Mode: Planning and coding only, skips spec creation and QA review'
+                : 'Full pipeline with spec creation and QA review'}
+            </p>
+          </div>
+
           {/* Agent Profile Selection */}
           <AgentProfileSelector
             profileId={profileId}
@@ -885,6 +927,7 @@ export function TaskCreationWizard({
             thinkingLevel={thinkingLevel}
             phaseModels={phaseModels}
             phaseThinking={phaseThinking}
+            framework={framework}
             onProfileChange={(newProfileId, newModel, newThinkingLevel) => {
               setProfileId(newProfileId);
               setModel(newModel);

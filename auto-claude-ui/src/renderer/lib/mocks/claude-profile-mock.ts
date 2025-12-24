@@ -43,7 +43,7 @@ export const claudeProfileMock = {
       sessionThreshold: 95,
       weeklyThreshold: 99,
       autoSwitchOnRateLimit: false,
-      usageCheckInterval: 30000
+      usageCheckInterval: 10000
     }
   }),
 
@@ -62,6 +62,11 @@ export const claudeProfileMock = {
 
   // Usage Monitoring (Proactive Account Switching)
   requestUsageUpdate: async () => ({
+    success: true,
+    data: null
+  }),
+
+  forceUsageRefresh: async () => ({
     success: true,
     data: null
   }),

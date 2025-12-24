@@ -1,17 +1,19 @@
 /**
- * Usage Monitor - Proactive usage monitoring and account switching
+ * Usage Monitor - Real-time usage tracking and proactive account switching
  *
- * Monitors Claude account usage at configured intervals and automatically
- * switches to alternative accounts before hitting rate limits.
+ * Monitors Claude account usage at configured intervals (default: 10s).
+ * The usage indicator is ALWAYS visible when an OAuth token is configured.
+ * Auto-switching to alternative accounts is optional (disabled by default).
  *
  * Uses hybrid approach:
  * 1. Primary: Direct OAuth API (https://api.anthropic.com/api/oauth/usage)
- * 2. Fallback: CLI /usage command parsing
+ * 2. Fallback: Local JSONL file analysis (like ccusage)
  */
 
 import { EventEmitter } from 'events';
 import { getClaudeProfileManager } from '../claude-profile-manager';
 import { ClaudeUsageSnapshot } from '../../shared/types/agent';
+import { calculateLocalUsage } from './local-usage-calculator';
 
 export class UsageMonitor extends EventEmitter {
   private static instance: UsageMonitor;
@@ -33,24 +35,23 @@ export class UsageMonitor extends EventEmitter {
   }
 
   /**
-   * Start monitoring usage at configured interval
+   * Start monitoring usage at configured interval.
+   * Works with either OAuth token (API) or local file analysis (fallback).
+   * Auto-switch threshold checking only runs if proactiveSwapEnabled is true.
    */
   start(): void {
     const profileManager = getClaudeProfileManager();
     const settings = profileManager.getAutoSwitchSettings();
-
-    if (!settings.enabled || !settings.proactiveSwapEnabled) {
-      console.warn('[UsageMonitor] Proactive monitoring disabled');
-      return;
-    }
 
     if (this.intervalId) {
       console.warn('[UsageMonitor] Already running');
       return;
     }
 
-    const interval = settings.usageCheckInterval || 30000;
+    // Use configured interval, default to 10 seconds
+    const interval = settings.usageCheckInterval || 10000;
     console.warn('[UsageMonitor] Starting with interval:', interval, 'ms');
+    console.warn('[UsageMonitor] Will use API if token available, otherwise local file analysis');
 
     // Check immediately
     this.checkUsageAndSwap();
@@ -59,6 +60,42 @@ export class UsageMonitor extends EventEmitter {
     this.intervalId = setInterval(() => {
       this.checkUsageAndSwap();
     }, interval);
+  }
+
+  /**
+   * Force an immediate usage refresh
+   * Returns the updated usage snapshot
+   */
+  async forceRefresh(): Promise<ClaudeUsageSnapshot | null> {
+    console.warn('[UsageMonitor] Force refresh requested');
+
+    const profileManager = getClaudeProfileManager();
+    const activeProfile = profileManager.getActiveProfile();
+
+    if (!activeProfile) {
+      console.warn('[UsageMonitor] No active profile for force refresh');
+      return null;
+    }
+
+    const decryptedToken = profileManager.getProfileToken(activeProfile.id);
+    console.warn('[UsageMonitor] Token status:', {
+      profileId: activeProfile.id,
+      hasToken: !!decryptedToken,
+      tokenLength: decryptedToken?.length ?? 0
+    });
+
+    // Reset API method flag on force refresh - always try API first if we have a token
+    if (decryptedToken) {
+      this.useApiMethod = true;
+    }
+
+    // fetchUsage will try API first (if token), then fall back to local files
+    const usage = await this.fetchUsage(activeProfile.id, decryptedToken);
+    if (usage) {
+      this.currentUsage = usage;
+      this.emit('usage-updated', usage);
+    }
+    return usage;
   }
 
   /**
@@ -109,27 +146,29 @@ export class UsageMonitor extends EventEmitter {
 
       this.currentUsage = usage;
 
-      // Emit usage update for UI
+      // Emit usage update for UI (always)
       this.emit('usage-updated', usage);
 
-      // Check thresholds
+      // Only check thresholds and perform auto-switch if enabled
       const settings = profileManager.getAutoSwitchSettings();
-      const sessionExceeded = usage.sessionPercent >= settings.sessionThreshold;
-      const weeklyExceeded = usage.weeklyPercent >= settings.weeklyThreshold;
+      if (settings.enabled && settings.proactiveSwapEnabled) {
+        const sessionExceeded = usage.sessionPercent >= settings.sessionThreshold;
+        const weeklyExceeded = usage.weeklyPercent >= settings.weeklyThreshold;
 
-      if (sessionExceeded || weeklyExceeded) {
-        console.warn('[UsageMonitor] Threshold exceeded:', {
-          sessionPercent: usage.sessionPercent,
-          sessionThreshold: settings.sessionThreshold,
-          weeklyPercent: usage.weeklyPercent,
-          weeklyThreshold: settings.weeklyThreshold
-        });
+        if (sessionExceeded || weeklyExceeded) {
+          console.warn('[UsageMonitor] Threshold exceeded:', {
+            sessionPercent: usage.sessionPercent,
+            sessionThreshold: settings.sessionThreshold,
+            weeklyPercent: usage.weeklyPercent,
+            weeklyThreshold: settings.weeklyThreshold
+          });
 
-        // Attempt proactive swap
-        await this.performProactiveSwap(
-          activeProfile.id,
-          sessionExceeded ? 'session' : 'weekly'
-        );
+          // Attempt proactive swap
+          await this.performProactiveSwap(
+            activeProfile.id,
+            sessionExceeded ? 'session' : 'weekly'
+          );
+        }
       }
     } catch (error) {
       console.error('[UsageMonitor] Check failed:', error);
@@ -149,11 +188,13 @@ export class UsageMonitor extends EventEmitter {
     const profileManager = getClaudeProfileManager();
     const profile = profileManager.getProfile(profileId);
     if (!profile) {
+      console.warn('[UsageMonitor] Profile not found:', profileId);
       return null;
     }
 
     // Attempt 1: Direct API call (preferred)
     if (this.useApiMethod && oauthToken) {
+      console.warn('[UsageMonitor] Attempting API fetch with token length:', oauthToken.length);
       const apiUsage = await this.fetchUsageViaAPI(oauthToken, profileId, profile.name);
       if (apiUsage) {
         console.warn('[UsageMonitor] Successfully fetched via API');
@@ -163,10 +204,18 @@ export class UsageMonitor extends EventEmitter {
       // API failed - switch to CLI method for future calls
       console.warn('[UsageMonitor] API method failed, falling back to CLI');
       this.useApiMethod = false;
+    } else {
+      // Log why we're skipping API
+      if (!this.useApiMethod) {
+        console.warn('[UsageMonitor] Skipping API (disabled from previous failure)');
+      }
+      if (!oauthToken) {
+        console.warn('[UsageMonitor] Skipping API (no token provided)');
+      }
     }
 
-    // Attempt 2: CLI /usage command (fallback)
-    return await this.fetchUsageViaCLI(profileId, profile.name);
+    // Attempt 2: Local file analysis (fallback)
+    return await this.fetchUsageViaLocalFiles(profileId, profile.name);
   }
 
   /**
@@ -179,6 +228,7 @@ export class UsageMonitor extends EventEmitter {
     profileName: string
   ): Promise<ClaudeUsageSnapshot | null> {
     try {
+      console.warn('[UsageMonitor] Calling API: https://api.anthropic.com/api/oauth/usage');
       const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
         method: 'GET',
         headers: {
@@ -189,7 +239,12 @@ export class UsageMonitor extends EventEmitter {
       });
 
       if (!response.ok) {
-        console.error('[UsageMonitor] API error:', response.status, response.statusText);
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        console.error('[UsageMonitor] API error:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody
+        });
         return null;
       }
 
@@ -227,20 +282,48 @@ export class UsageMonitor extends EventEmitter {
   }
 
   /**
-   * Fetch usage via CLI /usage command (fallback)
-   * Note: This is a fallback method. The API method is preferred.
-   * CLI-based fetching would require spawning a Claude process and parsing output,
-   * which is complex. For now, we rely on the API method.
+   * Fetch usage via local JSONL file analysis (fallback)
+   * Reads Claude Code's conversation logs and calculates token usage,
+   * similar to how ccusage works (https://github.com/ryoppippi/ccusage).
    */
-  private async fetchUsageViaCLI(
-    _profileId: string,
-    _profileName: string
+  private async fetchUsageViaLocalFiles(
+    profileId: string,
+    profileName: string
   ): Promise<ClaudeUsageSnapshot | null> {
-    // CLI-based usage fetching is not implemented yet.
-    // The API method should handle most cases. If we need CLI fallback,
-    // we would need to spawn a Claude process with /usage command and parse the output.
-    console.warn('[UsageMonitor] CLI fallback not implemented, API method should be used');
-    return null;
+    try {
+      console.warn('[UsageMonitor] Attempting local file-based usage calculation');
+      const localUsage = await calculateLocalUsage();
+
+      if (!localUsage) {
+        console.warn('[UsageMonitor] Local usage calculation returned null');
+        return null;
+      }
+
+      console.warn('[UsageMonitor] Local usage calculated:', {
+        sessionTokens: localUsage.sessionUsage.totalTokens,
+        weeklyTokens: localUsage.weeklyUsage.totalTokens,
+        sessionPercent: localUsage.sessionPercent,
+        weeklyPercent: localUsage.weeklyPercent
+      });
+
+      return {
+        sessionPercent: localUsage.sessionPercent,
+        weeklyPercent: localUsage.weeklyPercent,
+        sessionResetTime: localUsage.sessionResetTime,
+        weeklyResetTime: localUsage.weeklyResetTime,
+        profileId,
+        profileName,
+        fetchedAt: localUsage.fetchedAt,
+        limitType: localUsage.weeklyPercent > localUsage.sessionPercent ? 'weekly' : 'session',
+        // Add token counts for display
+        sessionTokens: localUsage.sessionUsage.totalTokens,
+        weeklyTokens: localUsage.weeklyUsage.totalTokens,
+        isEstimated: true  // Flag that percentages are estimated, not from API
+      };
+    } catch (error) {
+      console.error('[UsageMonitor] Local file analysis failed:', error);
+      return null;
+    }
   }
 
   /**

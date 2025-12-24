@@ -31,6 +31,10 @@ SDK_ENV_VARS = [
     "API_TIMEOUT_MS",
 ]
 
+# Z.ai API configuration for GLM models
+ZAI_BASE_URL = "https://api.z.ai/api/anthropic"
+ZAI_TIMEOUT_MS = 3000000  # 50 minutes per Z.ai docs
+
 
 def get_token_from_keychain() -> str | None:
     """
@@ -190,3 +194,68 @@ def ensure_claude_code_oauth_token() -> None:
     token = get_auth_token()
     if token:
         os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token
+
+
+def get_sdk_env_vars_for_model(model: str) -> dict[str, str]:
+    """
+    Get environment variables for SDK based on the model being used.
+
+    Priority order:
+    1. Existing env vars (set by UI for GLM models) - pass through as-is
+    2. Model-based detection (fallback for CLI usage)
+
+    For GLM models (Z.ai), sets:
+    - ANTHROPIC_BASE_URL to Z.ai endpoint
+    - ANTHROPIC_AUTH_TOKEN to Z.ai API key
+    - API_TIMEOUT_MS to Z.ai timeout
+
+    For Claude models (Anthropic), uses default SDK behavior with
+    standard environment variable passthrough.
+
+    Args:
+        model: Model shorthand or full model ID
+
+    Returns:
+        Dict of env var name -> value for SDK subprocess
+    """
+    from phase_config import is_glm_model
+
+    env = {}
+
+    # First, always pass through existing SDK env vars
+    # This respects values set by the UI (which correctly detects GLM models)
+    for var in SDK_ENV_VARS:
+        value = os.environ.get(var)
+        if value:
+            env[var] = value
+
+    # Check if Z.ai env vars are already set (by UI)
+    # If ANTHROPIC_BASE_URL points to Z.ai, we're already configured
+    existing_base_url = env.get("ANTHROPIC_BASE_URL", "")
+    already_configured_for_zai = "z.ai" in existing_base_url.lower()
+
+    if already_configured_for_zai:
+        # UI already configured Z.ai - just ensure timeout is set
+        if "API_TIMEOUT_MS" not in env:
+            env["API_TIMEOUT_MS"] = str(ZAI_TIMEOUT_MS)
+        return env
+
+    # Fallback: model-based detection (for CLI usage without UI)
+    if is_glm_model(model):
+        # Z.ai configuration for GLM models
+        env["ANTHROPIC_BASE_URL"] = ZAI_BASE_URL
+        env["API_TIMEOUT_MS"] = str(ZAI_TIMEOUT_MS)
+
+        # Get Z.ai API key from environment
+        zai_key = os.environ.get("ZAI_API_KEY")
+        if zai_key:
+            env["ANTHROPIC_AUTH_TOKEN"] = zai_key
+        else:
+            import logging
+
+            logging.warning(
+                "ZAI_API_KEY not set. GLM models require a Z.ai API key. "
+                "Please configure it in Settings > Integrations."
+            )
+
+    return env

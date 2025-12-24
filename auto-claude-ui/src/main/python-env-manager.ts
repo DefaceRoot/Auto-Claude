@@ -237,13 +237,10 @@ export class PythonEnvManager extends EventEmitter {
   }
 
   /**
-   * Install dependencies from requirements.txt using python -m pip
+   * Install dependencies from a specific requirements file
    */
-  private async installDeps(): Promise<boolean> {
-    if (!this.autoBuildSourcePath) return false;
-
+  private async installFromRequirements(requirementsPath: string, label: string): Promise<boolean> {
     const venvPython = this.getVenvPythonPath();
-    const requirementsPath = path.join(this.autoBuildSourcePath, 'requirements.txt');
 
     if (!venvPython || !existsSync(venvPython)) {
       this.emit('error', 'Python not found in virtual environment');
@@ -251,18 +248,13 @@ export class PythonEnvManager extends EventEmitter {
     }
 
     if (!existsSync(requirementsPath)) {
-      this.emit('error', 'requirements.txt not found');
+      console.warn(`[PythonEnvManager] ${label} requirements file not found:`, requirementsPath);
       return false;
     }
 
-    // Bootstrap pip first if needed
-    await this.bootstrapPip();
-
-    this.emit('status', 'Installing Python dependencies (this may take a minute)...');
-    console.warn('[PythonEnvManager] Installing dependencies from:', requirementsPath);
+    console.warn(`[PythonEnvManager] Installing ${label} dependencies from:`, requirementsPath);
 
     return new Promise((resolve) => {
-      // Use python -m pip for better compatibility across Python versions
       const proc = spawn(venvPython, ['-m', 'pip', 'install', '-r', requirementsPath], {
         cwd: this.autoBuildSourcePath!,
         stdio: 'pipe'
@@ -273,7 +265,6 @@ export class PythonEnvManager extends EventEmitter {
 
       proc.stdout?.on('data', (data) => {
         stdout += data.toString();
-        // Emit progress updates for long-running installations
         const lines = data.toString().split('\n');
         for (const line of lines) {
           if (line.includes('Installing') || line.includes('Successfully')) {
@@ -288,22 +279,83 @@ export class PythonEnvManager extends EventEmitter {
 
       proc.on('close', (code) => {
         if (code === 0) {
-          console.warn('[PythonEnvManager] Dependencies installed successfully');
-          this.emit('status', 'Dependencies installed successfully');
+          console.warn(`[PythonEnvManager] ${label} dependencies installed successfully`);
           resolve(true);
         } else {
-          console.error('[PythonEnvManager] Failed to install deps:', stderr || stdout);
-          this.emit('error', `Failed to install dependencies: ${stderr || stdout}`);
+          console.error(`[PythonEnvManager] Failed to install ${label} deps:`, stderr || stdout);
           resolve(false);
         }
       });
 
       proc.on('error', (err) => {
-        console.error('[PythonEnvManager] Error installing deps:', err);
-        this.emit('error', `Failed to install dependencies: ${err.message}`);
+        console.error(`[PythonEnvManager] Error installing ${label} deps:`, err);
         resolve(false);
       });
     });
+  }
+
+  /**
+   * Install dependencies - core first (required), then optional (can fail)
+   */
+  private async installDeps(): Promise<boolean> {
+    if (!this.autoBuildSourcePath) return false;
+
+    const venvPython = this.getVenvPythonPath();
+    if (!venvPython || !existsSync(venvPython)) {
+      this.emit('error', 'Python not found in virtual environment');
+      return false;
+    }
+
+    // Bootstrap pip first if needed
+    await this.bootstrapPip();
+
+    this.emit('status', 'Installing Python dependencies (this may take a minute)...');
+
+    // Try requirements-core.txt first (must succeed)
+    const coreRequirementsPath = path.join(this.autoBuildSourcePath, 'requirements-core.txt');
+    const optionalRequirementsPath = path.join(this.autoBuildSourcePath, 'requirements-optional.txt');
+    const legacyRequirementsPath = path.join(this.autoBuildSourcePath, 'requirements.txt');
+
+    // Check if we have the new split requirements files
+    if (existsSync(coreRequirementsPath)) {
+      // New approach: install core (required), then optional (can fail)
+      this.emit('status', 'Installing core dependencies...');
+      const coreInstalled = await this.installFromRequirements(coreRequirementsPath, 'core');
+
+      if (!coreInstalled) {
+        this.emit('error', 'Failed to install core dependencies');
+        return false;
+      }
+
+      // Try optional dependencies - these can fail without breaking the app
+      if (existsSync(optionalRequirementsPath)) {
+        this.emit('status', 'Installing optional dependencies (Graphiti memory)...');
+        const optionalInstalled = await this.installFromRequirements(optionalRequirementsPath, 'optional');
+
+        if (!optionalInstalled) {
+          console.warn('[PythonEnvManager] Optional dependencies failed to install - this is OK, Graphiti memory will be disabled');
+          this.emit('status', 'Note: Optional Graphiti dependencies could not be installed (requires Rust compiler on some platforms)');
+        }
+      }
+
+      this.emit('status', 'Dependencies installed successfully');
+      return true;
+    } else {
+      // Legacy approach: single requirements.txt
+      console.warn('[PythonEnvManager] Using legacy requirements.txt');
+      if (!existsSync(legacyRequirementsPath)) {
+        this.emit('error', 'requirements.txt not found');
+        return false;
+      }
+
+      const installed = await this.installFromRequirements(legacyRequirementsPath, 'all');
+      if (installed) {
+        this.emit('status', 'Dependencies installed successfully');
+      } else {
+        this.emit('error', 'Failed to install dependencies');
+      }
+      return installed;
+    }
   }
 
   /**

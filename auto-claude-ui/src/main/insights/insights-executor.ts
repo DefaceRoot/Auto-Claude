@@ -10,9 +10,10 @@ import type {
   InsightsToolUsage,
   InsightsModelConfig
 } from '../../shared/types';
-import { MODEL_ID_MAP } from '../../shared/constants';
+import { MODEL_ID_MAP, getModelProvider, MODEL_PROVIDERS } from '../../shared/constants/models';
 import { InsightsConfig } from './config';
 import { detectRateLimit, createSDKRateLimitInfo } from '../rate-limit-detector';
+import { loadGlobalSettings } from '../ipc-handlers/context/utils';
 
 /**
  * Message processor result
@@ -56,6 +57,39 @@ export class InsightsExecutor extends EventEmitter {
   }
 
   /**
+   * Get provider-specific environment variables for a model.
+   * For Z.ai GLM models, sets the appropriate base URL and API key.
+   * For Anthropic Claude models, returns empty (uses default auth flow).
+   */
+  private getModelEnvVars(model?: string): Record<string, string> {
+    if (!model) {
+      return {};
+    }
+
+    const provider = getModelProvider(model);
+
+    if (provider === 'zai') {
+      const settings = loadGlobalSettings();
+      const zaiKey = settings.globalZaiApiKey;
+
+      if (!zaiKey) {
+        console.warn('[Insights] Z.ai API key not configured for GLM model:', model);
+        return {};
+      }
+
+      return {
+        ANTHROPIC_BASE_URL: MODEL_PROVIDERS.zai.baseUrl,
+        ANTHROPIC_AUTH_TOKEN: zaiKey,
+        API_TIMEOUT_MS: String(MODEL_PROVIDERS.zai.timeout),
+        ZAI_API_KEY: zaiKey,
+      };
+    }
+
+    // Anthropic models use default profile-based auth
+    return {};
+  }
+
+  /**
    * Execute insights query
    */
   async execute(
@@ -87,6 +121,9 @@ export class InsightsExecutor extends EventEmitter {
     // Get process environment
     const processEnv = this.config.getProcessEnv();
 
+    // Get model-specific env vars (Z.ai base URL for GLM models)
+    const modelEnv = modelConfig ? this.getModelEnvVars(modelConfig.model) : {};
+
     // Write conversation history to temp file to avoid Windows command-line length limit
     const historyFile = path.join(
       os.tmpdir(),
@@ -117,10 +154,10 @@ export class InsightsExecutor extends EventEmitter {
       args.push('--thinking-level', modelConfig.thinkingLevel);
     }
 
-    // Spawn Python process
+    // Spawn Python process with Z.ai env vars for GLM models
     const proc = spawn(this.config.getPythonPath(), args, {
       cwd: autoBuildSource,
-      env: processEnv
+      env: { ...processEnv, ...modelEnv }
     });
 
     this.activeSessions.set(projectId, proc);

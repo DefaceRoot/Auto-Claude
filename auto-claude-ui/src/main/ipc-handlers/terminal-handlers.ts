@@ -382,11 +382,33 @@ export function registerTerminalHandlers(
     IPC_CHANNELS.CLAUDE_PROFILE_SET_TOKEN,
     async (_, profileId: string, token: string, email?: string): Promise<IPCResult> => {
       try {
+        debugLog('[IPC:CLAUDE_PROFILE_SET_TOKEN] Saving token:', {
+          profileId,
+          tokenLength: token.length,
+          tokenPrefix: token.substring(0, 15) + '...',
+          email: email || '(none)'
+        });
+
         const profileManager = getClaudeProfileManager();
         const success = profileManager.setProfileToken(profileId, token, email);
+
+        debugLog('[IPC:CLAUDE_PROFILE_SET_TOKEN] Result:', {
+          success,
+          profileId
+        });
+
         if (!success) {
           return { success: false, error: 'Profile not found' };
         }
+
+        // Verify the token was saved correctly
+        const verifyToken = profileManager.getProfileToken(profileId);
+        debugLog('[IPC:CLAUDE_PROFILE_SET_TOKEN] Verification:', {
+          tokenRetrieved: !!verifyToken,
+          retrievedLength: verifyToken?.length ?? 0,
+          matches: verifyToken === token
+        });
+
         return { success: true };
       } catch (error) {
         debugError('[IPC] Failed to set OAuth token:', error);
@@ -536,6 +558,23 @@ export function registerTerminalHandlers(
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Failed to get current usage'
+        };
+      }
+    }
+  );
+
+  // Force an immediate usage refresh
+  ipcMain.handle(
+    IPC_CHANNELS.USAGE_FORCE_REFRESH,
+    async (): Promise<IPCResult<import('../../shared/types').ClaudeUsageSnapshot | null>> => {
+      try {
+        const monitor = getUsageMonitor();
+        const usage = await monitor.forceRefresh();
+        return { success: true, data: usage };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to refresh usage'
         };
       }
     }

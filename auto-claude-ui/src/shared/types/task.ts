@@ -2,7 +2,7 @@
  * Task-related types
  */
 
-import type { ThinkingLevel, PhaseModelConfig, PhaseThinkingConfig } from './settings';
+import type { ThinkingLevel, PhaseModelConfig, PhaseThinkingConfig, AgentFramework } from './settings';
 
 export type TaskStatus = 'backlog' | 'in_progress' | 'ai_review' | 'human_review' | 'done';
 
@@ -136,6 +136,7 @@ export interface TaskDraft {
   priority: TaskPriority | '';
   complexity: TaskComplexity | '';
   impact: TaskImpact | '';
+  framework?: AgentFramework;  // Framework selection (auto-claude, quick-mode)
   profileId?: string;  // Agent profile ID ('auto', 'complex', 'balanced', 'quick', 'custom')
   model: ModelType | '';
   thinkingLevel: ThinkingLevel | '';
@@ -213,6 +214,7 @@ export interface TaskMetadata {
   requireReviewBeforeCoding?: boolean;  // Require human review of spec/plan before coding starts
 
   // Agent configuration (from agent profile or manual selection)
+  framework?: AgentFramework;  // Framework to use for this task (auto-claude, quick-mode) - locked after creation
   model?: ModelType;  // Claude model to use (haiku, sonnet, opus) - used when not auto profile
   thinkingLevel?: ThinkingLevel;  // Thinking budget level (none, low, medium, high, ultrathink)
   // Auto profile - per-phase model configuration

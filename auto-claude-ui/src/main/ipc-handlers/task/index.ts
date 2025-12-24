@@ -29,7 +29,7 @@ export function registerTaskHandlers(
   registerTaskCRUDHandlers(agentManager);
 
   // Register execution handlers (start, stop, review, status management, recovery)
-  registerTaskExecutionHandlers(agentManager, getMainWindow);
+  registerTaskExecutionHandlers(agentManager, pythonEnvManager, getMainWindow);
 
   // Register worktree handlers (status, diff, merge, discard, list)
   registerWorktreeHandlers(pythonEnvManager, getMainWindow);

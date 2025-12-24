@@ -26,7 +26,7 @@ export interface ClaudeUsageData {
 
 /**
  * Real-time usage snapshot for proactive monitoring
- * Returned from API or CLI usage check
+ * Returned from API or local file analysis
  */
 export interface ClaudeUsageSnapshot {
   /** Session usage percentage (0-100) */
@@ -45,6 +45,12 @@ export interface ClaudeUsageSnapshot {
   fetchedAt: Date;
   /** Which limit is closest to threshold ('session' or 'weekly') */
   limitType?: 'session' | 'weekly';
+  /** Session token count (from local file analysis) */
+  sessionTokens?: number;
+  /** Weekly token count (from local file analysis) */
+  weeklyTokens?: number;
+  /** True if percentages are estimated (local files), false if from official API */
+  isEstimated?: boolean;
 }
 
 /**

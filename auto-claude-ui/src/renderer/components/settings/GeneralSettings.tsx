@@ -9,9 +9,10 @@ import {
   THINKING_LEVELS,
   DEFAULT_FEATURE_MODELS,
   DEFAULT_FEATURE_THINKING,
-  FEATURE_LABELS
+  FEATURE_LABELS,
+  AGENT_FRAMEWORKS
 } from '../../../shared/constants';
-import type { AppSettings, FeatureModelConfig, FeatureThinkingConfig, ModelTypeShort, ThinkingLevel } from '../../../shared/types';
+import type { AppSettings, FeatureModelConfig, FeatureThinkingConfig, ModelTypeShort, ThinkingLevel, AgentFramework } from '../../../shared/types';
 
 interface GeneralSettingsProps {
   settings: AppSettings;
@@ -40,13 +41,20 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
               <p className="text-sm text-muted-foreground">The coding framework used for autonomous tasks</p>
               <Select
                 value={settings.agentFramework}
-                onValueChange={(value) => onSettingsChange({ ...settings, agentFramework: value })}
+                onValueChange={(value) => onSettingsChange({ ...settings, agentFramework: value as AgentFramework })}
               >
                 <SelectTrigger id="agentFramework" className="w-full max-w-md">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto-claude">Auto Claude</SelectItem>
+                  {AGENT_FRAMEWORKS.map((fw) => (
+                    <SelectItem key={fw.value} value={fw.value}>
+                      <div className="flex flex-col items-start">
+                        <span>{fw.label}</span>
+                        <span className="text-xs text-muted-foreground">{fw.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

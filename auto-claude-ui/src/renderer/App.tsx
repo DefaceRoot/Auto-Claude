@@ -600,7 +600,7 @@ export function App() {
             </div>
             {selectedProject && (
               <div className="electron-no-drag flex items-center gap-3">
-                <UsageIndicator />
+                <UsageIndicator onOpenSettings={() => setIsSettingsDialogOpen(true)} />
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button

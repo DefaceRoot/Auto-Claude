@@ -1,26 +1,90 @@
 /**
  * Model and agent profile constants
- * Claude models, thinking levels, memory backends, and agent profiles
+ * Claude models, GLM models, thinking levels, memory backends, and agent profiles
  */
 
-import type { AgentProfile, PhaseModelConfig, FeatureModelConfig, FeatureThinkingConfig } from '../types/settings';
+import type { AgentProfile, PhaseModelConfig, FeatureModelConfig, FeatureThinkingConfig, ModelProvider, AgentFramework } from '../types/settings';
+
+// ============================================
+// Agent Frameworks
+// ============================================
+
+// Available framework options for task execution
+export const AGENT_FRAMEWORKS: { value: AgentFramework; label: string; description: string }[] = [
+  {
+    value: 'auto-claude',
+    label: 'Auto Claude',
+    description: 'Full pipeline with spec creation and QA review'
+  },
+  {
+    value: 'quick-mode',
+    label: 'Quick Mode',
+    description: 'Fast iterations - planning and coding only'
+  }
+];
+
+// ============================================
+// Provider Configuration
+// ============================================
+
+export const MODEL_PROVIDERS = {
+  anthropic: {
+    baseUrl: undefined, // Uses default Anthropic API
+    authTokenEnvVar: 'CLAUDE_CODE_OAUTH_TOKEN',
+  },
+  zai: {
+    baseUrl: 'https://api.z.ai/api/anthropic',
+    authTokenEnvVar: 'ANTHROPIC_AUTH_TOKEN',
+    timeout: 3000000, // 50 minutes per Z.ai docs
+  }
+} as const;
 
 // ============================================
 // Available Models
 // ============================================
 
 export const AVAILABLE_MODELS = [
-  { value: 'opus', label: 'Claude Opus 4.5' },
-  { value: 'sonnet', label: 'Claude Sonnet 4.5' },
-  { value: 'haiku', label: 'Claude Haiku 4.5' }
+  // Anthropic Claude models
+  { value: 'opus', label: 'Claude Opus 4.5', provider: 'anthropic' as ModelProvider },
+  { value: 'sonnet', label: 'Claude Sonnet 4.5', provider: 'anthropic' as ModelProvider },
+  { value: 'haiku', label: 'Claude Haiku 4.5', provider: 'anthropic' as ModelProvider },
+  // Z.ai GLM models
+  { value: 'glm-4.7', label: 'GLM-4.7 (Opus tier)', provider: 'zai' as ModelProvider },
+  { value: 'glm-4.5-air', label: 'GLM-4.5-Air (Haiku tier)', provider: 'zai' as ModelProvider },
 ] as const;
 
-// Maps model shorthand to actual Claude model IDs
+// Maps model shorthand to actual model IDs
+// Note: GLM models use Claude model IDs because Z.ai's API expects Claude IDs
+// and handles the GLM mapping server-side
 export const MODEL_ID_MAP: Record<string, string> = {
+  // Claude models
   opus: 'claude-opus-4-5-20251101',
   sonnet: 'claude-sonnet-4-5-20250929',
-  haiku: 'claude-haiku-4-5-20251001'
+  haiku: 'claude-haiku-4-5-20251001',
+  // GLM models (Z.ai) - mapped to Claude IDs for API compatibility
+  // Z.ai routes these to GLM-4.7/GLM-4.5-Air on their backend
+  'glm-4.7': 'claude-opus-4-5-20251101',  // Opus tier → GLM-4.7
+  'glm-4.5-air': 'claude-haiku-4-5-20251001',  // Haiku tier → GLM-4.5-Air
 } as const;
+
+// ============================================
+// Provider Helper Functions
+// ============================================
+
+/**
+ * Get the provider for a model (anthropic or zai)
+ */
+export function getModelProvider(model: string): ModelProvider {
+  const modelInfo = AVAILABLE_MODELS.find(m => m.value === model);
+  return modelInfo?.provider ?? 'anthropic';
+}
+
+/**
+ * Check if a model is a GLM model (uses Z.ai API)
+ */
+export function isGLMModel(model: string): boolean {
+  return getModelProvider(model) === 'zai';
+}
 
 // Maps thinking levels to budget tokens (null = no extended thinking)
 export const THINKING_BUDGET_MAP: Record<string, number | null> = {

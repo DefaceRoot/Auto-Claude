@@ -25,7 +25,7 @@ import {
   DEFAULT_PHASE_THINKING
 } from '../../shared/constants';
 import type { ModelType, ThinkingLevel } from '../../shared/types';
-import type { PhaseModelConfig, PhaseThinkingConfig } from '../../shared/types/settings';
+import type { PhaseModelConfig, PhaseThinkingConfig, AgentFramework } from '../../shared/types/settings';
 import { cn } from '../lib/utils';
 
 interface AgentProfileSelectorProps {
@@ -39,6 +39,8 @@ interface AgentProfileSelectorProps {
   phaseModels?: PhaseModelConfig;
   /** Phase thinking configuration (for auto profile) */
   phaseThinking?: PhaseThinkingConfig;
+  /** Framework selection (affects which phases are visible) */
+  framework?: AgentFramework;
   /** Called when profile selection changes */
   onProfileChange: (profileId: string, model: ModelType, thinkingLevel: ThinkingLevel) => void;
   /** Called when model changes (in custom mode) */
@@ -51,6 +53,17 @@ interface AgentProfileSelectorProps {
   onPhaseThinkingChange?: (phaseThinking: PhaseThinkingConfig) => void;
   /** Whether the selector is disabled */
   disabled?: boolean;
+}
+
+/**
+ * Get visible phases based on framework selection
+ * Quick Mode only uses planning and coding phases
+ */
+function getVisiblePhases(framework?: AgentFramework): Array<keyof PhaseModelConfig> {
+  if (framework === 'quick-mode') {
+    return ['planning', 'coding'];
+  }
+  return ['spec', 'planning', 'coding', 'qa'];
 }
 
 const iconMap: Record<string, React.ElementType> = {
@@ -73,6 +86,7 @@ export function AgentProfileSelector({
   thinkingLevel,
   phaseModels,
   phaseThinking,
+  framework,
   onProfileChange,
   onModelChange,
   onThinkingLevelChange,
@@ -84,6 +98,9 @@ export function AgentProfileSelector({
 
   const isCustom = profileId === 'custom';
   const isAuto = profileId === 'auto';
+
+  // Get visible phases based on framework
+  const visiblePhases = getVisiblePhases(framework);
 
   // Use provided phase configs or defaults
   const currentPhaseModels = phaseModels || DEFAULT_PHASE_MODELS;
@@ -248,11 +265,11 @@ export function AgentProfileSelector({
             )}
           </button>
 
-          {/* Compact summary when collapsed */}
+          {/* Compact summary when collapsed - shows only visible phases based on framework */}
           {!showPhaseDetails && (
             <div className="px-4 pb-4 -mt-1">
               <div className="grid grid-cols-2 gap-2 text-xs">
-                {(Object.keys(PHASE_LABELS) as Array<keyof PhaseModelConfig>).map((phase) => {
+                {visiblePhases.map((phase) => {
                   const modelLabel = AVAILABLE_MODELS.find(m => m.value === currentPhaseModels[phase])?.label?.replace('Claude ', '') || currentPhaseModels[phase];
                   return (
                     <div key={phase} className="flex items-center justify-between rounded bg-background/50 px-2 py-1">
@@ -262,13 +279,19 @@ export function AgentProfileSelector({
                   );
                 })}
               </div>
+              {framework === 'quick-mode' && (
+                <p className="text-[10px] text-primary mt-2">Quick Mode: Skips spec creation and QA</p>
+              )}
             </div>
           )}
 
-          {/* Detailed Phase Configuration */}
+          {/* Detailed Phase Configuration - shows only visible phases based on framework */}
           {showPhaseDetails && (
             <div className="px-4 pb-4 space-y-4 border-t border-border pt-4">
-              {(Object.keys(PHASE_LABELS) as Array<keyof PhaseModelConfig>).map((phase) => (
+              {framework === 'quick-mode' && (
+                <p className="text-xs text-primary">Quick Mode: Only planning and coding phases are used</p>
+              )}
+              {visiblePhases.map((phase) => (
                 <div key={phase} className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-medium text-foreground">

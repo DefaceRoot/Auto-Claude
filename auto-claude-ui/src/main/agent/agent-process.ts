@@ -10,6 +10,8 @@ import { detectRateLimit, createSDKRateLimitInfo, getProfileEnv, detectAuthFailu
 import { projectStore } from '../project-store';
 import { getClaudeProfileManager } from '../claude-profile-manager';
 import { findPythonCommand, parsePythonCommand } from '../python-detector';
+import { getModelProvider, isGLMModel, MODEL_PROVIDERS } from '../../shared/constants/models';
+import { loadGlobalSettings } from '../ipc-handlers/context/utils';
 
 /**
  * Process spawning and lifecycle management
@@ -97,6 +99,40 @@ export class AgentProcessManager {
   }
 
   /**
+   * Get provider-specific environment variables for a model.
+   * For Z.ai GLM models, sets the appropriate base URL and API key.
+   * For Anthropic Claude models, returns empty (uses default auth flow).
+   */
+  private getModelEnvVars(model?: string): Record<string, string> {
+    if (!model) {
+      return {};
+    }
+
+    const provider = getModelProvider(model);
+
+    if (provider === 'zai') {
+      const settings = loadGlobalSettings();
+      const zaiKey = settings.globalZaiApiKey;
+
+      if (!zaiKey) {
+        console.warn('[AgentProcess] Z.ai API key not configured for GLM model:', model);
+        return {};
+      }
+
+      return {
+        ANTHROPIC_BASE_URL: MODEL_PROVIDERS.zai.baseUrl,
+        ANTHROPIC_AUTH_TOKEN: zaiKey,
+        API_TIMEOUT_MS: String(MODEL_PROVIDERS.zai.timeout),
+        // Pass Z.ai key to Python backend as well
+        ZAI_API_KEY: zaiKey,
+      };
+    }
+
+    // Anthropic models use default profile-based auth
+    return {};
+  }
+
+  /**
    * Load environment variables from auto-claude .env file
    */
   loadAutoBuildEnv(): Record<string, string> {
@@ -145,13 +181,15 @@ export class AgentProcessManager {
 
   /**
    * Spawn a Python process for task execution
+   * @param model - Optional model identifier for provider-specific env vars (e.g., 'glm-4.7' for Z.ai)
    */
   spawnProcess(
     taskId: string,
     cwd: string,
     args: string[],
     extraEnv: Record<string, string> = {},
-    processType: ProcessType = 'task-execution'
+    processType: ProcessType = 'task-execution',
+    model?: string
   ): void {
     const isSpecRunner = processType === 'spec-creation';
     // Kill existing process for this task if any
@@ -163,6 +201,9 @@ export class AgentProcessManager {
     // Get active Claude profile environment (CLAUDE_CONFIG_DIR if not default)
     const profileEnv = getProfileEnv();
 
+    // Get model-specific environment (Z.ai base URL and auth for GLM models)
+    const modelEnv = this.getModelEnvVars(model);
+
     // Parse Python command to handle space-separated commands like "py -3"
     const [pythonCommand, pythonBaseArgs] = parsePythonCommand(this.pythonPath);
     const childProcess = spawn(pythonCommand, [...pythonBaseArgs, ...args], {
@@ -171,6 +212,7 @@ export class AgentProcessManager {
         ...process.env,
         ...extraEnv,
         ...profileEnv, // Include active Claude profile config
+        ...modelEnv, // Include model-specific env (Z.ai base URL, etc.)
         PYTHONUNBUFFERED: '1', // Ensure real-time output
         PYTHONIOENCODING: 'utf-8', // Ensure UTF-8 encoding on Windows
         PYTHONUTF8: '1' // Force Python UTF-8 mode on Windows (Python 3.7+)

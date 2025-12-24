@@ -15,6 +15,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# MCP/AI Tool Configuration
+.serena/
+
 # Logs
 logs/
 *.log

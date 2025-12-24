@@ -40,6 +40,7 @@ interface IntegrationSettingsProps {
 export function IntegrationSettings({ settings, onSettingsChange, isOpen }: IntegrationSettingsProps) {
   // Password visibility toggle for global API keys
   const [showGlobalOpenAIKey, setShowGlobalOpenAIKey] = useState(false);
+  const [showGlobalZaiKey, setShowGlobalZaiKey] = useState(false);
 
   // Claude Accounts state
   const [claudeProfiles, setClaudeProfiles] = useState<ClaudeProfile[]>([]);
@@ -650,12 +651,13 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
                           <Label className="text-sm">Check usage every</Label>
                           <select
                             className="w-full px-3 py-2 bg-background border border-input rounded-md text-sm"
-                            value={autoSwitchSettings?.usageCheckInterval ?? 30000}
+                            value={autoSwitchSettings?.usageCheckInterval ?? 10000}
                             onChange={(e) => handleUpdateAutoSwitch({ usageCheckInterval: parseInt(e.target.value) })}
                             disabled={isLoadingAutoSwitch}
                           >
+                            <option value={10000}>10 seconds (recommended)</option>
                             <option value={15000}>15 seconds</option>
-                            <option value={30000}>30 seconds (recommended)</option>
+                            <option value={30000}>30 seconds</option>
                             <option value={60000}>1 minute</option>
                             <option value={0}>Disabled</option>
                           </select>
@@ -748,6 +750,36 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
           </div>
 
           <div className="space-y-4">
+            {/* Z.ai API Key - for GLM models */}
+            <div className="space-y-2">
+              <Label htmlFor="globalZaiKey" className="text-sm font-medium text-foreground">
+                Z.ai API Key
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Required for GLM-4.7 and GLM-4.5-Air models via the Z.ai endpoint
+              </p>
+              <div className="relative max-w-lg">
+                <Input
+                  id="globalZaiKey"
+                  type={showGlobalZaiKey ? 'text' : 'password'}
+                  placeholder="sk-..."
+                  value={settings.globalZaiApiKey || ''}
+                  onChange={(e) =>
+                    onSettingsChange({ ...settings, globalZaiApiKey: e.target.value || undefined })
+                  }
+                  className="pr-10 font-mono text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowGlobalZaiKey(!showGlobalZaiKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showGlobalZaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* OpenAI API Key */}
             <div className="space-y-2">
               <Label htmlFor="globalOpenAIKey" className="text-sm font-medium text-foreground">
                 OpenAI API Key

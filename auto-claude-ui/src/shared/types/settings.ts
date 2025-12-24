@@ -8,6 +8,9 @@ import type { ChangelogFormat, ChangelogAudience, ChangelogEmojiLevel } from './
 // Color theme types for multi-theme support
 export type ColorTheme = 'default' | 'dusk' | 'lime' | 'ocean' | 'retro' | 'neo' | 'forest';
 
+// Agent framework types
+export type AgentFramework = 'auto-claude' | 'quick-mode';
+
 export interface ThemePreviewColors {
   bg: string;
   accent: string;
@@ -25,8 +28,11 @@ export interface ColorThemeDefinition {
 // Thinking level for Claude model (budget token allocation)
 export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'ultrathink';
 
-// Model type shorthand
-export type ModelTypeShort = 'haiku' | 'sonnet' | 'opus';
+// Model provider (determines API endpoint and auth)
+export type ModelProvider = 'anthropic' | 'zai';
+
+// Model type shorthand (includes both Claude and GLM models)
+export type ModelTypeShort = 'haiku' | 'sonnet' | 'opus' | 'glm-4.7' | 'glm-4.5-air';
 
 // Phase-based model configuration for Auto profile
 // Each phase can use a different model optimized for that task type
@@ -77,7 +83,7 @@ export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
   colorTheme?: ColorTheme;
   defaultModel: string;
-  agentFramework: string;
+  agentFramework: AgentFramework;
   pythonPath?: string;
   autoBuildPath?: string;
   autoUpdateAutoBuild: boolean;
@@ -92,6 +98,8 @@ export interface AppSettings {
   // Graphiti LLM provider settings
   graphitiLlmProvider?: 'openai' | 'anthropic' | 'google' | 'groq' | 'ollama';
   ollamaBaseUrl?: string;
+  // Z.ai API key for GLM models (GLM-4.7, GLM-4.5-Air)
+  globalZaiApiKey?: string;
   // Onboarding wizard completion state
   onboardingCompleted?: boolean;
   // Selected agent profile for preset model/thinking configurations

@@ -6,7 +6,9 @@ import {
   AVAILABLE_MODELS,
   THINKING_LEVELS,
   DEFAULT_PHASE_MODELS,
-  DEFAULT_PHASE_THINKING
+  DEFAULT_PHASE_THINKING,
+  getModelProvider,
+  AGENT_FRAMEWORKS
 } from '../../../shared/constants';
 import { useSettingsStore, saveSettings } from '../../stores/settings-store';
 import { SettingsSection } from './SettingsSection';
@@ -19,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '../ui/select';
-import type { AgentProfile, PhaseModelConfig, PhaseThinkingConfig, ModelTypeShort, ThinkingLevel } from '../../../shared/types/settings';
+import type { AgentProfile, PhaseModelConfig, PhaseThinkingConfig, ModelTypeShort, ThinkingLevel, AgentFramework } from '../../../shared/types/settings';
 
 /**
  * Icon mapping for agent profile icons
@@ -39,6 +41,17 @@ const PHASE_LABELS: Record<keyof PhaseModelConfig, { label: string; description:
 };
 
 /**
+ * Get visible phases based on framework selection
+ * Quick Mode only uses planning and coding phases
+ */
+function getVisiblePhases(framework: AgentFramework): Array<keyof PhaseModelConfig> {
+  if (framework === 'quick-mode') {
+    return ['planning', 'coding'];
+  }
+  return ['spec', 'planning', 'coding', 'qa'];
+}
+
+/**
  * Agent Profile Settings component
  * Displays preset agent profiles for quick model/thinking level configuration
  * Used in the Settings page under Agent Settings
@@ -47,6 +60,10 @@ export function AgentProfileSettings() {
   const settings = useSettingsStore((state) => state.settings);
   const selectedProfileId = settings.selectedAgentProfile || 'auto';
   const [showPhaseConfig, setShowPhaseConfig] = useState(selectedProfileId === 'auto');
+
+  // Get current framework from settings (defaults to 'auto-claude')
+  const currentFramework: AgentFramework = settings.agentFramework || 'auto-claude';
+  const visiblePhases = getVisiblePhases(currentFramework);
 
   // Get current phase config from settings or defaults
   const currentPhaseModels: PhaseModelConfig = settings.customPhaseModels || DEFAULT_PHASE_MODELS;
@@ -91,6 +108,13 @@ export function AgentProfileSettings() {
   };
 
   /**
+   * Check if a model is from Z.ai provider
+   */
+  const isZaiModel = (modelValue: string): boolean => {
+    return getModelProvider(modelValue) === 'zai';
+  };
+
+  /**
    * Get human-readable thinking level label
    */
   const getThinkingLabel = (thinkingValue: string): string => {
@@ -99,11 +123,10 @@ export function AgentProfileSettings() {
   };
 
   /**
-   * Check if current phase config differs from defaults
+   * Check if current phase config differs from defaults (only check visible phases)
    */
   const hasCustomConfig = (): boolean => {
-    const phases: Array<keyof PhaseModelConfig> = ['spec', 'planning', 'coding', 'qa'];
-    return phases.some(
+    return visiblePhases.some(
       phase =>
         currentPhaseModels[phase] !== DEFAULT_PHASE_MODELS[phase] ||
         currentPhaseThinking[phase] !== DEFAULT_PHASE_THINKING[phase]
@@ -160,8 +183,11 @@ export function AgentProfileSettings() {
 
             {/* Model and thinking level badges */}
             <div className="mt-2 flex flex-wrap gap-1.5">
-              <span className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              <span className="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {getModelLabel(profile.model)}
+                {isZaiModel(profile.model) && (
+                  <span className="text-[9px] bg-secondary px-1 py-0.5 rounded">Z.ai</span>
+                )}
               </span>
               <span className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {getThinkingLabel(profile.thinkingLevel)} Thinking
@@ -206,6 +232,9 @@ export function AgentProfileSettings() {
                 <h4 className="font-medium text-sm text-foreground">Phase Configuration</h4>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Customize model and thinking level for each phase
+                  {currentFramework === 'quick-mode' && (
+                    <span className="ml-1 text-primary">(Quick Mode: planning and coding only)</span>
+                  )}
                 </p>
               </div>
               {showPhaseConfig ? (
@@ -233,9 +262,9 @@ export function AgentProfileSettings() {
                   </div>
                 )}
 
-                {/* Phase Configuration Grid */}
+                {/* Phase Configuration Grid - shows only visible phases based on framework */}
                 <div className="space-y-4">
-                  {(Object.keys(PHASE_LABELS) as Array<keyof PhaseModelConfig>).map((phase) => (
+                  {visiblePhases.map((phase) => (
                     <div key={phase} className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label className="text-sm font-medium text-foreground">
@@ -259,7 +288,14 @@ export function AgentProfileSettings() {
                             <SelectContent>
                               {AVAILABLE_MODELS.map((m) => (
                                 <SelectItem key={m.value} value={m.value}>
-                                  {m.label}
+                                  <div className="flex items-center gap-2">
+                                    <span>{m.label}</span>
+                                    {m.provider === 'zai' && (
+                                      <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded font-medium">
+                                        Z.ai
+                                      </span>
+                                    )}
+                                  </div>
                                 </SelectItem>
                               ))}
                             </SelectContent>
