@@ -20,7 +20,7 @@ Usage:
 import sys
 
 # Python version check
-if sys.version_info < (3, 10):
+if sys.version_info < (3, 10):  # noqa: UP036
     sys.exit(
         f"Error: Quick Mode requires Python 3.10 or higher.\n"
         f"You are running Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
@@ -59,6 +59,8 @@ _PARENT_DIR = Path(__file__).parent
 if str(_PARENT_DIR) not in sys.path:
     sys.path.insert(0, str(_PARENT_DIR))
 
+import shutil  # noqa: I001 - must be after path setup
+
 from core.client import create_client
 from phase_config import get_phase_model, get_phase_thinking_budget
 from ui import (
@@ -74,9 +76,59 @@ from ui import (
     success,
     warning,
 )
+from worktree import WorktreeManager
 
 
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
+
+
+def setup_quick_mode_worktree(
+    project_dir: Path,
+    spec_name: str,
+    source_spec_dir: Path,
+    base_branch: str | None = None,
+) -> tuple[Path, WorktreeManager, Path]:
+    """
+    Set up an isolated worktree for Quick Mode execution.
+
+    Quick Mode always uses worktrees to keep the main branch clean.
+    This matches the behavior of the full Auto Claude framework.
+
+    Args:
+        project_dir: The project directory
+        spec_name: Name of the spec being built
+        source_spec_dir: Source spec directory to copy to worktree
+        base_branch: Base branch for worktree creation (default: auto-detect)
+
+    Returns:
+        Tuple of (worktree_path, worktree_manager, localized_spec_dir)
+    """
+    print()
+    print_status("Setting up isolated workspace...", "progress")
+
+    manager = WorktreeManager(project_dir, base_branch=base_branch)
+    manager.setup()
+
+    # Get or create worktree for this spec
+    worktree_info = manager.get_or_create_worktree(spec_name)
+
+    # Copy spec files to worktree so the AI can access them
+    # (AI's filesystem is restricted to the worktree)
+    target_spec_dir = worktree_info.path / ".auto-claude" / "specs" / spec_name
+    target_spec_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    if target_spec_dir.exists():
+        shutil.rmtree(target_spec_dir)
+
+    if source_spec_dir.exists():
+        shutil.copytree(source_spec_dir, target_spec_dir)
+        print_status("Spec files copied to workspace", "success")
+
+    print_status(f"Workspace ready: {worktree_info.path.name}", "success")
+    print(muted(f"  Branch: {worktree_info.branch}"))
+    print()
+
+    return worktree_info.path, manager, target_spec_dir
 
 
 def parse_args() -> argparse.Namespace:
@@ -386,13 +438,19 @@ async def run_quick_mode(
     model: str,
     task_description: str,
     verbose: bool = False,
+    base_branch: str | None = None,
 ) -> bool:
     """
     Run Quick Mode with two phases: Planning and Implementation.
+
+    Quick Mode always uses an isolated worktree to keep the main branch clean.
+    Changes are made on a separate branch that can be reviewed and merged later.
     """
-    # Initialize status manager
+    spec_name = spec_dir.name
+
+    # Initialize status manager (uses project_dir for status file location)
     status_manager = StatusManager(project_dir)
-    status_manager.set_active(spec_dir.name, BuildState.PLANNING)
+    status_manager.set_active(spec_name, BuildState.PLANNING)
 
     print()
     print("=" * 70)
@@ -400,14 +458,31 @@ async def run_quick_mode(
     print("=" * 70)
     print()
     print(f"Project: {project_dir}")
-    print(f"Spec: {spec_dir.name}")
+    print(f"Spec: {spec_name}")
     print(f"Model: {model}")
     print()
 
-    # Phase 1: Planning
+    # Set up isolated worktree for this spec
+    # This keeps the main branch clean and allows easy review/merge later
+    try:
+        worktree_path, worktree_manager, localized_spec_dir = setup_quick_mode_worktree(
+            project_dir=project_dir,
+            spec_name=spec_name,
+            source_spec_dir=spec_dir,
+            base_branch=base_branch,
+        )
+    except Exception as e:
+        status_manager.update(state=BuildState.ERROR)
+        print_status(f"Failed to set up workspace: {e}", "error")
+        return False
+
+    print(muted(f"Working in: {worktree_path}"))
+    print()
+
+    # Phase 1: Planning (runs inside worktree)
     status_manager.update(state=BuildState.PLANNING)
     planning_success = await run_planning_phase(
-        project_dir, spec_dir, model, task_description, verbose
+        worktree_path, localized_spec_dir, model, task_description, verbose
     )
 
     if not planning_success:
@@ -416,10 +491,10 @@ async def run_quick_mode(
         print_status("Quick Mode failed in planning phase", "error")
         return False
 
-    # Phase 2: Implementation
+    # Phase 2: Implementation (runs inside worktree)
     status_manager.update(state=BuildState.BUILDING)
     implementation_success = await run_implementation_phase(
-        project_dir, spec_dir, model, verbose
+        worktree_path, localized_spec_dir, model, verbose
     )
 
     if not implementation_success:
@@ -427,6 +502,11 @@ async def run_quick_mode(
         print()
         print_status("Quick Mode failed in implementation phase", "error")
         return False
+
+    # Commit changes in the worktree
+    worktree_manager.commit_in_worktree(
+        spec_name, f"Quick Mode: {task_description[:50]}"
+    )
 
     # Success!
     status_manager.update(state=BuildState.COMPLETE)
@@ -436,6 +516,21 @@ async def run_quick_mode(
     print("=" * 70)
     print()
     print(success("Task completed successfully!"))
+    print()
+
+    # Show next steps
+    print(muted("Next steps:"))
+    print(muted(f"  • Review changes: cd {worktree_path}"))
+    print(
+        muted(
+            f"  • Merge to main:  python auto-claude/run.py --spec {spec_name} --merge"
+        )
+    )
+    print(
+        muted(
+            f"  • Discard build:  python auto-claude/run.py --spec {spec_name} --discard"
+        )
+    )
     print()
 
     return True
@@ -529,16 +624,17 @@ def main():
 
     # Run quick mode
     try:
-        success = asyncio.run(
+        success_result = asyncio.run(
             run_quick_mode(
                 project_dir=project_dir,
                 spec_dir=spec_dir,
                 model=model,
                 task_description=task_description,
                 verbose=args.verbose,
+                base_branch=args.base_branch,
             )
         )
-        sys.exit(0 if success else 1)
+        sys.exit(0 if success_result else 1)
     except KeyboardInterrupt:
         print()
         print(warning("Quick Mode interrupted by user"))
