@@ -65,12 +65,66 @@ export interface LocalUsageSnapshot {
   fetchedAt: Date;
 }
 
-// Estimated limits for Claude Pro (these are rough estimates)
-// Claude doesn't publish exact limits, but based on community observations:
-// Session limit ~500k-1M tokens per 5 hours
-// Weekly limit ~5-10M tokens per 7 days
-const ESTIMATED_SESSION_LIMIT = 750000; // 750k tokens per 5 hours (conservative estimate)
-const ESTIMATED_WEEKLY_LIMIT = 7500000; // 7.5M tokens per 7 days (conservative estimate)
+/**
+ * Pricing for Claude 3.5 Sonnet API (per million tokens)
+ * Source: https://www.anthropic.com/pricing
+ *
+ * These pricing values are used to convert token counts to their API-equivalent cost.
+ * This is more accurate than raw token counting because Claude's rate limits are
+ * based on compute/cost, not raw token counts.
+ */
+const SONNET_PRICING = {
+  inputPerMillion: 3.0,        // $3.00 per 1M input tokens
+  outputPerMillion: 15.0,      // $15.00 per 1M output tokens
+  cacheReadPerMillion: 0.30,   // $0.30 per 1M cache read tokens (10% of input)
+  cacheWritePerMillion: 3.75,  // $3.75 per 1M cache write tokens (125% of input)
+};
+
+/**
+ * Estimated cost limits for Claude Pro subscription
+ *
+ * Based on ~$120/month Pro subscription value:
+ * - Monthly: ~$120
+ * - Weekly (4.33 weeks/month): ~$28
+ * - Session (5-hour window, ~30 sessions/month): ~$0.85
+ *
+ * These are estimates as Anthropic doesn't publish exact limits.
+ * Using cost-based limits aligns with how Anthropic actually enforces rate limits
+ * (based on compute cost, not raw token counts).
+ */
+const ESTIMATED_COST_LIMITS = {
+  sessionCostUSD: 0.85,   // ~$0.85 per 5-hour window
+  weeklyCostUSD: 28.0,    // ~$28 per week
+};
+
+/**
+ * Calculate the API-equivalent cost for a given set of tokens
+ *
+ * Uses Claude 3.5 Sonnet pricing to convert token counts to their cost equivalent.
+ * This is more accurate than raw token counting for rate limit estimation because
+ * Anthropic's rate limits are based on compute cost, not raw token counts.
+ *
+ * @param inputTokens - Number of input tokens
+ * @param outputTokens - Number of output tokens
+ * @param cacheReadTokens - Number of cache read tokens (default: 0)
+ * @param cacheWriteTokens - Number of cache write tokens (default: 0)
+ * @returns Total cost in USD
+ */
+function calculateCost(
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens: number = 0,
+  cacheWriteTokens: number = 0
+): number {
+  // Calculate cost for each token type
+  const inputCost = (inputTokens / 1_000_000) * SONNET_PRICING.inputPerMillion;
+  const outputCost = (outputTokens / 1_000_000) * SONNET_PRICING.outputPerMillion;
+  const cacheReadCost = (cacheReadTokens / 1_000_000) * SONNET_PRICING.cacheReadPerMillion;
+  const cacheWriteCost = (cacheWriteTokens / 1_000_000) * SONNET_PRICING.cacheWritePerMillion;
+
+  // Return total cost
+  return inputCost + outputCost + cacheReadCost + cacheWriteCost;
+}
 
 /**
  * Get Claude project directories (both legacy and new paths)
@@ -193,16 +247,30 @@ function addToAggregation(
   timestamp: Date,
   costUSD?: number
 ): void {
-  agg.inputTokens += usage.input_tokens || 0;
-  agg.outputTokens += usage.output_tokens || 0;
-  agg.cacheCreationTokens += usage.cache_creation_input_tokens || 0;
-  agg.cacheReadTokens += usage.cache_read_input_tokens || 0;
+  // Extract token counts for clarity
+  const inputTokens = usage.input_tokens || 0;
+  const outputTokens = usage.output_tokens || 0;
+  const cacheReadTokens = usage.cache_read_input_tokens || 0;
+  const cacheCreationTokens = usage.cache_creation_input_tokens || 0;
+
+  agg.inputTokens += inputTokens;
+  agg.outputTokens += outputTokens;
+  agg.cacheCreationTokens += cacheCreationTokens;
+  agg.cacheReadTokens += cacheReadTokens;
   agg.totalTokens +=
-    (usage.input_tokens || 0) +
-    (usage.output_tokens || 0) +
-    (usage.cache_creation_input_tokens || 0) +
-    (usage.cache_read_input_tokens || 0);
-  agg.costUSD += costUSD || 0;
+    inputTokens +
+    outputTokens +
+    cacheCreationTokens +
+    cacheReadTokens;
+
+  // Calculate cost based on token counts (more accurate than raw token counting)
+  // Use event's costUSD if provided, otherwise calculate from tokens
+  if (costUSD && costUSD > 0) {
+    agg.costUSD += costUSD;
+  } else {
+    agg.costUSD += calculateCost(inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens);
+  }
+
   agg.eventCount++;
 
   if (!agg.oldestEvent || timestamp < agg.oldestEvent) {
@@ -345,18 +413,20 @@ export async function calculateLocalUsage(
           continue;
         }
 
-        // Only count input_tokens and output_tokens (NOT cache tokens)
-        // Cache tokens represent context size, not actual rate-limited usage
-        // Also, cache tokens can be massive (100K+) which would massively inflate usage
+        // Include all token types - cost calculation handles proper weighting
+        // Cache tokens are weighted at 10% (read) or 125% (write) of input token cost
         const actualUsage: TokenUsage = {
           input_tokens: usage.input_tokens || 0,
           output_tokens: usage.output_tokens || 0,
-          // Don't count cache tokens - they don't count against rate limits the same way
-          cache_creation_input_tokens: 0,
-          cache_read_input_tokens: 0,
+          cache_read_input_tokens: usage.cache_read_input_tokens || 0,
+          cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
         };
 
-        const totalTokensInEvent = actualUsage.input_tokens + actualUsage.output_tokens;
+        const totalTokensInEvent =
+          actualUsage.input_tokens +
+          actualUsage.output_tokens +
+          actualUsage.cache_read_input_tokens +
+          actualUsage.cache_creation_input_tokens;
 
         if (totalTokensInEvent === 0) {
           continue;
@@ -384,14 +454,15 @@ export async function calculateLocalUsage(
     weeklyEvents: weeklyUsage.eventCount
   });
 
-  // Calculate estimated percentages
+  // Calculate estimated percentages based on cost (more accurate than raw token counts)
+  // Rate limits are based on compute/cost, so using calculated cost gives better estimates
   const sessionPercent = Math.min(
     100,
-    Math.round((sessionUsage.totalTokens / ESTIMATED_SESSION_LIMIT) * 100)
+    Math.round((sessionUsage.costUSD / ESTIMATED_COST_LIMITS.sessionCostUSD) * 100)
   );
   const weeklyPercent = Math.min(
     100,
-    Math.round((weeklyUsage.totalTokens / ESTIMATED_WEEKLY_LIMIT) * 100)
+    Math.round((weeklyUsage.costUSD / ESTIMATED_COST_LIMITS.weeklyCostUSD) * 100)
   );
 
   // Calculate reset times
@@ -413,9 +484,13 @@ export async function calculateLocalUsage(
       )
     : 'Now';
 
-  console.warn('[LocalUsageCalculator] Usage calculated:', {
+  console.warn('[LocalUsageCalculator] Usage calculated (cost-based):', {
     sessionTokens: sessionUsage.totalTokens,
     weeklyTokens: weeklyUsage.totalTokens,
+    sessionCostUSD: sessionUsage.costUSD.toFixed(4),
+    weeklyCostUSD: weeklyUsage.costUSD.toFixed(4),
+    sessionLimitUSD: ESTIMATED_COST_LIMITS.sessionCostUSD,
+    weeklyLimitUSD: ESTIMATED_COST_LIMITS.weeklyCostUSD,
     sessionPercent,
     weeklyPercent,
     sessionEvents: sessionUsage.eventCount,
