@@ -600,16 +600,10 @@ export function App() {
               )}
             </div>
 
-            {/* Center: Usage indicator - more prominent */}
+            {/* Right: Settings button + Usage indicator */}
             {selectedProject && (
-              <div className="electron-no-drag flex items-center justify-center flex-1">
+              <div className="electron-no-drag flex-1 flex items-center justify-end gap-3">
                 <UsageIndicator onOpenSettings={() => setIsSettingsDialogOpen(true)} />
-              </div>
-            )}
-
-            {/* Right: Settings button */}
-            {selectedProject && (
-              <div className="electron-no-drag flex-1 flex items-center justify-end">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button

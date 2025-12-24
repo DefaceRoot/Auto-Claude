@@ -18,6 +18,7 @@ import { Button } from '../../ui/button';
 import { Checkbox } from '../../ui/checkbox';
 import { cn } from '../../../lib/utils';
 import type { Task, WorktreeStatus, MergeConflict, MergeStats, GitConflictInfo } from '../../../../shared/types';
+import { useTerminalStore } from '../../../stores/terminal-store';
 
 interface WorkspaceStatusProps {
   task: Task;
@@ -55,6 +56,7 @@ export function WorkspaceStatus({
   onStageOnlyChange,
   onMerge
 }: WorkspaceStatusProps) {
+  const addTerminal = useTerminalStore((state) => state.addTerminal);
   const hasGitConflicts = mergePreview?.gitConflicts?.hasConflicts;
   const hasUncommittedChanges = mergePreview?.uncommittedChanges?.hasChanges;
   const uncommittedCount = mergePreview?.uncommittedChanges?.count || 0;
@@ -93,10 +95,7 @@ export function WorkspaceStatus({
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  window.electronAPI.createTerminal({
-                    id: `open-${task.id}`,
-                    cwd: worktreeStatus.worktreePath!
-                  });
+                  addTerminal(worktreeStatus.worktreePath!);
                 }}
                 className="h-7 px-2"
                 title="Open in terminal"
@@ -162,10 +161,7 @@ export function WorkspaceStatus({
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  window.electronAPI.createTerminal({
-                    id: `stash-${task.id}`,
-                    cwd: worktreeStatus.worktreePath?.replace('.worktrees/' + task.specId, '') || undefined
-                  });
+                  addTerminal(worktreeStatus.worktreePath?.replace('.worktrees/' + task.specId, '') || '');
                 }}
                 className="text-xs h-6 mt-2"
               >
