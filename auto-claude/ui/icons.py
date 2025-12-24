@@ -42,6 +42,7 @@ class Icons:
     BRANCH = ("", "[B]")
     COMMIT = ("◉", "(@)")
     LIGHTNING = ("⚡", "!")
+    CODE = ("💻", "[C]")
 
     # Progress
     SUBTASK = ("▣", "#")
