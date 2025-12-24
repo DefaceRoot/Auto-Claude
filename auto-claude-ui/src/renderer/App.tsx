@@ -589,7 +589,8 @@ export function App() {
 
           {/* Header */}
           <header className="electron-drag flex h-14 items-center justify-between border-b border-border bg-card/50 backdrop-blur-sm px-6">
-            <div className="electron-no-drag">
+            {/* Left: Project name */}
+            <div className="electron-no-drag flex-1">
               {selectedProject ? (
                 <h1 className="font-semibold text-foreground">{selectedProject.name}</h1>
               ) : (
@@ -598,9 +599,17 @@ export function App() {
                 </div>
               )}
             </div>
+
+            {/* Center: Usage indicator - more prominent */}
             {selectedProject && (
-              <div className="electron-no-drag flex items-center gap-3">
+              <div className="electron-no-drag flex items-center justify-center">
                 <UsageIndicator onOpenSettings={() => setIsSettingsDialogOpen(true)} />
+              </div>
+            )}
+
+            {/* Right: Settings button */}
+            {selectedProject && (
+              <div className="electron-no-drag flex-1 flex items-center justify-end">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
