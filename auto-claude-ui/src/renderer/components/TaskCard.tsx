@@ -321,6 +321,7 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
               subtasks={task.subtasks}
               isStuck={isStuck}
               isRunning={isRunning}
+              framework={task.metadata?.framework}
             />
           </div>
         )}
