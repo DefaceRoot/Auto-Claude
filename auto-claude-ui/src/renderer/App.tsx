@@ -602,7 +602,7 @@ export function App() {
 
             {/* Center: Usage indicator - more prominent */}
             {selectedProject && (
-              <div className="electron-no-drag flex items-center justify-center">
+              <div className="electron-no-drag flex items-center justify-center flex-1">
                 <UsageIndicator onOpenSettings={() => setIsSettingsDialogOpen(true)} />
               </div>
             )}

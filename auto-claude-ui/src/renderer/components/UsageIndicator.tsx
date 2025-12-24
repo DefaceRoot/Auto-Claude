@@ -81,13 +81,13 @@ export function UsageIndicator({ onOpenSettings }: UsageIndicatorProps) {
     return (
       <button
         disabled
-        className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border text-muted-foreground bg-card/80 backdrop-blur-sm border-border opacity-50 shadow-sm"
+        className="flex items-center gap-2.5 px-4 py-2 rounded-lg border text-muted-foreground bg-card/80 backdrop-blur-sm border-border opacity-50 shadow-sm"
         aria-label="Loading usage data"
       >
         <RefreshCw className="h-4 w-4 animate-spin shrink-0" />
         <div className="flex flex-col items-start gap-0.5">
           <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Usage</span>
-          <span className="text-sm font-semibold font-mono leading-none">--%</span>
+          <span className="text-base font-semibold font-mono leading-none">--%</span>
         </div>
       </button>
     );
@@ -102,13 +102,13 @@ export function UsageIndicator({ onOpenSettings }: UsageIndicatorProps) {
             <button
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg border transition-all hover:opacity-80 hover:shadow-md active:scale-95 text-muted-foreground bg-card/80 backdrop-blur-sm border-border shadow-sm ${isRefreshing ? 'opacity-70' : ''}`}
+              className={`flex items-center gap-2.5 px-4 py-2 rounded-lg border transition-all hover:opacity-80 hover:shadow-md active:scale-95 text-muted-foreground bg-card/80 backdrop-blur-sm border-border shadow-sm ${isRefreshing ? 'opacity-70' : ''}`}
               aria-label="Refresh usage data"
             >
               <RefreshCw className={`h-4 w-4 shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
               <div className="flex flex-col items-start gap-0.5">
                 <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Usage</span>
-                <span className="text-sm font-semibold font-mono leading-none">--%</span>
+                <span className="text-base font-semibold font-mono leading-none">--%</span>
               </div>
             </button>
           </TooltipTrigger>
@@ -142,19 +142,19 @@ export function UsageIndicator({ onOpenSettings }: UsageIndicatorProps) {
           <button
             onClick={handleRefresh}
             disabled={isRefreshing}
-            className={`flex items-center gap-3 px-3 py-1.5 rounded-lg border-l-4 bg-card/80 backdrop-blur-sm shadow-sm hover:shadow-md transition-all hover:opacity-90 active:scale-95 ${colorClasses} ${isRefreshing ? 'opacity-70' : ''}`}
+            className={`flex items-center gap-3 px-4 py-2 rounded-lg border-l-4 bg-card/80 backdrop-blur-sm shadow-sm hover:shadow-md transition-all hover:opacity-90 active:scale-95 ${colorClasses} ${isRefreshing ? 'opacity-70' : ''}`}
             aria-label="Claude usage status - click to refresh"
           >
             <StatusIcon className={`h-4 w-4 shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
             <div className="flex items-center gap-3">
               <div className="flex flex-col items-start gap-0.5">
-                <span className="text-[9px] text-muted-foreground uppercase tracking-wide">5h</span>
-                <span className="text-sm font-semibold font-mono leading-none">{Math.round(usage.sessionPercent)}%</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wide">5h</span>
+                <span className="text-base font-semibold font-mono leading-none">{Math.round(usage.sessionPercent)}%</span>
               </div>
               <div className="w-px h-6 bg-border/60" />
               <div className="flex flex-col items-start gap-0.5">
-                <span className="text-[9px] text-muted-foreground uppercase tracking-wide">7d</span>
-                <span className="text-sm font-semibold font-mono leading-none">{Math.round(usage.weeklyPercent)}%</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wide">7d</span>
+                <span className="text-base font-semibold font-mono leading-none">{Math.round(usage.weeklyPercent)}%</span>
               </div>
             </div>
           </button>
