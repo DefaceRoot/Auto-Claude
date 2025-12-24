@@ -129,7 +129,8 @@ async def run_qa_validation_loop(
         print("\n📝 Human feedback detected. Running QA Fixer first...")
 
         # Get model and thinking budget for fixer (uses QA phase config)
-        qa_model = get_phase_model(spec_dir, "qa", model)
+        # Pass resolve=False to preserve model shorthand for GLM provider detection
+        qa_model = get_phase_model(spec_dir, "qa", model, resolve=False)
         fixer_thinking_budget = get_phase_thinking_budget(spec_dir, "qa")
 
         fix_client = create_client(
@@ -204,7 +205,8 @@ async def run_qa_validation_loop(
         print(f"\n--- QA Iteration {qa_iteration}/{MAX_QA_ITERATIONS} ---")
 
         # Run QA reviewer with phase-specific model and thinking budget
-        qa_model = get_phase_model(spec_dir, "qa", model)
+        # Pass resolve=False to preserve model shorthand for GLM provider detection
+        qa_model = get_phase_model(spec_dir, "qa", model, resolve=False)
         qa_thinking_budget = get_phase_thinking_budget(spec_dir, "qa")
         debug(
             "qa_loop",

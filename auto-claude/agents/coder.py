@@ -248,7 +248,9 @@ async def run_autonomous_agent(
         # Get the phase-specific model and thinking level (respects task_metadata.json configuration)
         # first_run means we're in planning phase, otherwise coding phase
         current_phase = "planning" if first_run else "coding"
-        phase_model = get_phase_model(spec_dir, current_phase, model)
+        # Pass resolve=False to preserve model shorthand for GLM provider detection
+        # create_client() will resolve to full model ID internally
+        phase_model = get_phase_model(spec_dir, current_phase, model, resolve=False)
         phase_thinking_budget = get_phase_thinking_budget(spec_dir, current_phase)
 
         # Create client (fresh context) with phase-specific model and thinking

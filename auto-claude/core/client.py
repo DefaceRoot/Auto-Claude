@@ -142,7 +142,7 @@ def create_client(
     Args:
         project_dir: Root directory for the project (working directory)
         spec_dir: Directory containing the spec (for settings file)
-        model: Claude model to use
+        model: Claude model to use (shorthand like 'glm-4.7' or full ID)
         agent_type: Type of agent - 'planner', 'coder', 'qa_reviewer', or 'qa_fixer'
                    This determines which custom auto-claude tools are available.
         max_thinking_tokens: Token budget for extended thinking (None = disabled)
@@ -161,13 +161,21 @@ def create_client(
        (see security.py for ALLOWED_COMMANDS)
     4. Tool filtering - Each agent type only sees relevant tools (prevents misuse)
     """
+    from phase_config import resolve_model_id
+
     oauth_token = require_auth_token()
     # Ensure SDK can access it via its expected env var
     os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
 
     # Collect env vars to pass to SDK (ANTHROPIC_BASE_URL, etc.)
     # Uses model-aware function to set Z.ai base URL for GLM models
+    # IMPORTANT: Pass the original model (shorthand) for accurate provider detection
+    # GLM models like 'glm-4.7' need Z.ai env vars set correctly
     sdk_env = get_sdk_env_vars_for_model(model)
+
+    # Resolve model shorthand to full model ID for SDK
+    # SDK expects full model IDs like 'claude-opus-4-5-20251101'
+    model_id = resolve_model_id(model)
 
     # Check if Linear integration is enabled
     linear_enabled = is_linear_enabled()
@@ -338,7 +346,7 @@ def create_client(
 
     return ClaudeSDKClient(
         options=ClaudeAgentOptions(
-            model=model,
+            model=model_id,  # Use resolved full model ID for SDK
             system_prompt=(
                 f"You are an expert full-stack developer building production-quality software. "
                 f"Your working directory is: {project_dir.resolve()}\n"

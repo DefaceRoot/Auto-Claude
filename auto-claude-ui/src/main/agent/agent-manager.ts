@@ -157,9 +157,54 @@ export class AgentManager extends EventEmitter {
   }
 
   /**
+   * Get a GLM model from task_metadata.json if ANY phase uses one.
+   * This is needed because the Python process handles all phases, so Z.ai env vars
+   * must be set at process spawn time if any phase will use a GLM model.
+   *
+   * Priority: Returns the first GLM model found in order: planning, coding, qa
+   * Returns undefined if no GLM models are used (falls back to Anthropic auth).
+   */
+  private getTaskGLMModel(projectPath: string, specId: string): string | undefined {
+    try {
+      const specDir = path.join(projectPath, '.auto-claude', 'specs', specId);
+      const metadataPath = path.join(specDir, 'task_metadata.json');
+
+      if (!existsSync(metadataPath)) {
+        return undefined;
+      }
+
+      const metadata = JSON.parse(readFileSync(metadataPath, 'utf-8'));
+
+      // For auto profile, check all phase models for GLM
+      if (metadata.isAutoProfile && metadata.phaseModels) {
+        const phases = ['planning', 'coding', 'qa'] as const;
+        for (const phase of phases) {
+          const model = metadata.phaseModels[phase];
+          if (model && isGLMModel(model)) {
+            return model;
+          }
+        }
+        return undefined; // No GLM models in any phase
+      }
+
+      // For single model profile, check if it's GLM
+      if (metadata.model && isGLMModel(metadata.model)) {
+        return metadata.model;
+      }
+
+      return undefined;
+    } catch (err) {
+      console.warn('[AgentManager] Failed to read task metadata for GLM model:', err);
+      return undefined;
+    }
+  }
+
+  /**
    * Get the model from task_metadata.json for a spec.
    * Returns the model shorthand (e.g., 'glm-4.7') for Z.ai env var injection.
-   * Defaults to the planning phase model for run.py.
+   *
+   * NOTE: For task execution, use getTaskGLMModel() instead as the Python process
+   * handles multiple phases and needs Z.ai env vars if ANY phase uses GLM.
    */
   private getTaskModel(projectPath: string, specId: string): string | undefined {
     return this.getTaskModelForPhase(projectPath, specId, 'planning');
@@ -305,11 +350,79 @@ export class AgentManager extends EventEmitter {
     // Store context for potential restart
     this.storeTaskContext(taskId, projectPath, specId, options, false);
 
-    // Get the model from task metadata for Z.ai env var injection
+    // Get GLM model from task metadata for Z.ai env var injection if ANY phase uses GLM
     // This is needed because GLM models require ANTHROPIC_BASE_URL to be set to Z.ai's endpoint
-    const model = this.getTaskModel(projectPath, specId);
+    // Since the Python process handles all phases, we need to set Z.ai env vars at spawn time
+    // if ANY phase (planning, coding, or qa) uses a GLM model
+    const glmModel = this.getTaskGLMModel(projectPath, specId);
 
-    this.processManager.spawnProcess(taskId, autoBuildSource, args, combinedEnv, 'task-execution', model);
+    this.processManager.spawnProcess(taskId, autoBuildSource, args, combinedEnv, 'task-execution', glmModel);
+  }
+
+  /**
+   * Start Quick Mode execution (run_quick.py)
+   *
+   * Quick Mode bypasses the full Auto Claude framework:
+   * - No spec creation pipeline (uses minimal spec or inline task)
+   * - No subtasks or implementation plans
+   * - No QA validation loop
+   *
+   * Just two phases:
+   * 1. Planning - Claude creates an implementation plan
+   * 2. Implementation - A fresh Claude instance executes the plan
+   */
+  startQuickModeExecution(
+    taskId: string,
+    projectPath: string,
+    specId: string,
+    taskDescription: string,
+    options: TaskExecutionOptions = {}
+  ): void {
+    // Pre-flight auth check: Verify active profile has valid authentication
+    const profileManager = getClaudeProfileManager();
+    if (!profileManager.hasValidAuth()) {
+      this.emit('error', taskId, 'Claude authentication required. Please authenticate in Settings > Claude Profiles before starting tasks.');
+      return;
+    }
+
+    const autoBuildSource = this.processManager.getAutoBuildSourcePath();
+
+    if (!autoBuildSource) {
+      this.emit('error', taskId, 'Auto-build source path not found. Please configure it in App Settings.');
+      return;
+    }
+
+    const runQuickPath = path.join(autoBuildSource, 'run_quick.py');
+
+    if (!existsSync(runQuickPath)) {
+      this.emit('error', taskId, `Quick Mode script not found at: ${runQuickPath}`);
+      return;
+    }
+
+    // Get combined environment variables
+    const combinedEnv = this.processManager.getCombinedEnv(projectPath);
+
+    const args = [runQuickPath, '--spec', specId, '--project-dir', projectPath];
+
+    // Pass the task description for Quick Mode
+    if (taskDescription) {
+      args.push('--task', taskDescription);
+    }
+
+    // Pass base branch if specified
+    if (options.baseBranch) {
+      args.push('--base-branch', options.baseBranch);
+    }
+
+    // Store context for potential restart
+    this.storeTaskContext(taskId, projectPath, specId, options, false);
+
+    // Get GLM model from task metadata for Z.ai env var injection
+    const glmModel = this.getTaskGLMModel(projectPath, specId);
+
+    console.log('[AgentManager] Starting Quick Mode execution:', { taskId, specId, taskDescription: taskDescription?.slice(0, 100) });
+
+    this.processManager.spawnProcess(taskId, autoBuildSource, args, combinedEnv, 'task-execution', glmModel);
   }
 
   /**
@@ -339,11 +452,12 @@ export class AgentManager extends EventEmitter {
 
     const args = [runPath, '--spec', specId, '--project-dir', projectPath, '--qa'];
 
-    // Get the model from task metadata for Z.ai env var injection
-    // For QA, we need to check if it's an auto profile and use the qa phase model
-    const model = this.getTaskModelForPhase(projectPath, specId, 'qa');
+    // Get GLM model from task metadata for Z.ai env var injection
+    // Use getTaskGLMModel to check if QA phase (or any phase) uses GLM
+    // This ensures Z.ai env vars are set correctly for the Python process
+    const glmModel = this.getTaskGLMModel(projectPath, specId);
 
-    this.processManager.spawnProcess(taskId, autoBuildSource, args, combinedEnv, 'qa-process', model);
+    this.processManager.spawnProcess(taskId, autoBuildSource, args, combinedEnv, 'qa-process', glmModel);
   }
 
   /**

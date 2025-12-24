@@ -151,21 +151,18 @@ export function registerTaskExecutionHandlers(
 
       if (needsSpecCreation) {
         if (isQuickMode) {
-          // Quick Mode: Generate minimal spec and start task execution (skip full spec pipeline)
-          console.warn('[TASK_START] Quick Mode: Generating minimal spec for:', task.specId);
+          // Quick Mode: Use run_quick.py for streamlined plan → implement flow
+          console.warn('[TASK_START] Quick Mode: Starting quick execution for:', task.specId);
           generateMinimalSpec(specDir, task.title, task.description);
 
-          // Start task execution with skipQA flag (Quick Mode skips QA)
-          agentManager.startTaskExecution(
+          // Start Quick Mode execution (uses run_quick.py instead of run.py)
+          const taskDescription = task.description || task.title;
+          agentManager.startQuickModeExecution(
             taskId,
             project.path,
             task.specId,
-            {
-              parallel: false,
-              workers: 1,
-              baseBranch,
-              skipQA: true  // Quick Mode skips QA review
-            }
+            taskDescription,
+            { baseBranch }
           );
         } else {
           // Auto Claude (Full): Run full spec creation pipeline
@@ -177,45 +174,60 @@ export function registerTaskExecutionHandlers(
           agentManager.startSpecCreation(task.specId, project.path, taskDescription, specDir, task.metadata);
         }
       } else if (needsImplementation) {
-        // Spec exists but no subtasks - run run.py to create implementation plan and execute
-        // Read the spec.md to get the task description
-        const _taskDescription = task.description || task.title;
-        try {
-          readFileSync(specFilePath, 'utf-8');
-        } catch {
-          // Use default description
-        }
+        // Spec exists but no subtasks - start execution
+        const taskDescription = task.description || task.title;
 
-        console.warn('[TASK_START] Starting task execution (no subtasks) for:', task.specId);
-        // Start task execution which will create the implementation plan
-        // Note: No parallel mode for planning phase - parallel only makes sense with multiple subtasks
-        agentManager.startTaskExecution(
-          taskId,
-          project.path,
-          task.specId,
-          {
-            parallel: false,  // Sequential for planning phase
-            workers: 1,
-            baseBranch,
-            skipQA: isQuickMode  // Quick Mode skips QA review
-          }
-        );
+        if (isQuickMode) {
+          // Quick Mode: Use run_quick.py
+          console.warn('[TASK_START] Quick Mode: Starting quick execution (has spec) for:', task.specId);
+          agentManager.startQuickModeExecution(
+            taskId,
+            project.path,
+            task.specId,
+            taskDescription,
+            { baseBranch }
+          );
+        } else {
+          // Auto Claude: Use run.py to create implementation plan and execute
+          console.warn('[TASK_START] Starting task execution (no subtasks) for:', task.specId);
+          agentManager.startTaskExecution(
+            taskId,
+            project.path,
+            task.specId,
+            {
+              parallel: false,
+              workers: 1,
+              baseBranch
+            }
+          );
+        }
       } else {
         // Task has subtasks, start normal execution
-        // Note: Parallel execution is handled internally by the agent, not via CLI flags
-        console.warn('[TASK_START] Starting task execution (has subtasks) for:', task.specId);
-
-        agentManager.startTaskExecution(
-          taskId,
-          project.path,
-          task.specId,
-          {
-            parallel: false,
-            workers: 1,
-            baseBranch,
-            skipQA: isQuickMode  // Quick Mode skips QA review
-          }
-        );
+        if (isQuickMode) {
+          // Quick Mode: Use run_quick.py (ignore existing subtasks, fresh start)
+          const taskDescription = task.description || task.title;
+          console.warn('[TASK_START] Quick Mode: Starting quick execution (has subtasks) for:', task.specId);
+          agentManager.startQuickModeExecution(
+            taskId,
+            project.path,
+            task.specId,
+            taskDescription,
+            { baseBranch }
+          );
+        } else {
+          // Auto Claude: Continue with subtask execution
+          console.warn('[TASK_START] Starting task execution (has subtasks) for:', task.specId);
+          agentManager.startTaskExecution(
+            taskId,
+            project.path,
+            task.specId,
+            {
+              parallel: false,
+              workers: 1,
+              baseBranch
+            }
+          );
+        }
       }
 
       // Notify status change
@@ -543,54 +555,70 @@ export function registerTaskExecutionHandlers(
 
           console.warn('[TASK_UPDATE_STATUS] hasSpec:', hasSpec, 'needsSpecCreation:', needsSpecCreation, 'needsImplementation:', needsImplementation, 'framework:', taskFramework);
 
+          const taskDescription = task.description || task.title;
+
           if (needsSpecCreation) {
             if (isQuickMode) {
-              // Quick Mode: Generate minimal spec and start task execution
-              console.warn('[TASK_UPDATE_STATUS] Quick Mode: Generating minimal spec for:', task.specId);
+              // Quick Mode: Generate minimal spec and use run_quick.py
+              console.warn('[TASK_UPDATE_STATUS] Quick Mode: Starting quick execution for:', task.specId);
               generateMinimalSpec(specDir, task.title, task.description);
+              agentManager.startQuickModeExecution(
+                taskId,
+                project.path,
+                task.specId,
+                taskDescription
+              );
+            } else {
+              // Full mode: Run spec creation pipeline
+              console.warn('[TASK_UPDATE_STATUS] Starting spec creation for:', task.specId);
+              agentManager.startSpecCreation(task.specId, project.path, taskDescription, specDir, task.metadata);
+            }
+          } else if (needsImplementation) {
+            if (isQuickMode) {
+              // Quick Mode: Use run_quick.py
+              console.warn('[TASK_UPDATE_STATUS] Quick Mode: Starting quick execution (has spec) for:', task.specId);
+              agentManager.startQuickModeExecution(
+                taskId,
+                project.path,
+                task.specId,
+                taskDescription
+              );
+            } else {
+              // Auto Claude: Use run.py to create implementation plan and execute
+              console.warn('[TASK_UPDATE_STATUS] Starting task execution (no subtasks) for:', task.specId);
               agentManager.startTaskExecution(
                 taskId,
                 project.path,
                 task.specId,
                 {
                   parallel: false,
-                  workers: 1,
-                  skipQA: true
+                  workers: 1
                 }
               );
-            } else {
-              // Full mode: Run spec creation pipeline
-              const taskDescription = task.description || task.title;
-              console.warn('[TASK_UPDATE_STATUS] Starting spec creation for:', task.specId);
-              agentManager.startSpecCreation(task.specId, project.path, taskDescription, specDir, task.metadata);
             }
-          } else if (needsImplementation) {
-            // Spec exists but no subtasks - run run.py to create implementation plan and execute
-            console.warn('[TASK_UPDATE_STATUS] Starting task execution (no subtasks) for:', task.specId);
-            agentManager.startTaskExecution(
-              taskId,
-              project.path,
-              task.specId,
-              {
-                parallel: false,
-                workers: 1,
-                skipQA: isQuickMode
-              }
-            );
           } else {
-            // Task has subtasks, start normal execution
-            // Note: Parallel execution is handled internally by the agent
-            console.warn('[TASK_UPDATE_STATUS] Starting task execution (has subtasks) for:', task.specId);
-            agentManager.startTaskExecution(
-              taskId,
-              project.path,
-              task.specId,
-              {
-                parallel: false,
-                workers: 1,
-                skipQA: isQuickMode
-              }
-            );
+            if (isQuickMode) {
+              // Quick Mode: Use run_quick.py
+              console.warn('[TASK_UPDATE_STATUS] Quick Mode: Starting quick execution (has subtasks) for:', task.specId);
+              agentManager.startQuickModeExecution(
+                taskId,
+                project.path,
+                task.specId,
+                taskDescription
+              );
+            } else {
+              // Auto Claude: Continue with subtask execution
+              console.warn('[TASK_UPDATE_STATUS] Starting task execution (has subtasks) for:', task.specId);
+              agentManager.startTaskExecution(
+                taskId,
+                project.path,
+                task.specId,
+                {
+                  parallel: false,
+                  workers: 1
+                }
+              );
+            }
           }
 
           // Notify renderer about status change
@@ -834,40 +862,47 @@ export function registerTaskExecutionHandlers(
             const recoveryTaskFramework = getTaskFramework(task);
             const isQuickModeRecovery = recoveryTaskFramework === 'quick-mode';
 
+            const taskDescription = task.description || task.title;
+
             if (needsSpecCreation) {
               if (isQuickModeRecovery) {
-                // Quick Mode: Generate minimal spec and start task execution
-                console.warn(`[Recovery] Quick Mode: Generating minimal spec for: ${task.specId}`);
+                // Quick Mode: Generate minimal spec and use run_quick.py
+                console.warn(`[Recovery] Quick Mode: Starting quick execution for: ${task.specId}`);
                 generateMinimalSpec(specDirForWatcher, task.title, task.description);
+                agentManager.startQuickModeExecution(
+                  taskId,
+                  project.path,
+                  task.specId,
+                  taskDescription
+                );
+              } else {
+                // Full mode: Run spec creation pipeline
+                console.warn(`[Recovery] Starting spec creation for: ${task.specId}`);
+                agentManager.startSpecCreation(task.specId, project.path, taskDescription, specDirForWatcher, task.metadata);
+              }
+            } else {
+              if (isQuickModeRecovery) {
+                // Quick Mode: Use run_quick.py
+                console.warn(`[Recovery] Quick Mode: Starting quick execution for: ${task.specId}`);
+                agentManager.startQuickModeExecution(
+                  taskId,
+                  project.path,
+                  task.specId,
+                  taskDescription
+                );
+              } else {
+                // Auto Claude: Continue with subtask execution
+                console.warn(`[Recovery] Starting task execution for: ${task.specId}`);
                 agentManager.startTaskExecution(
                   taskId,
                   project.path,
                   task.specId,
                   {
                     parallel: false,
-                    workers: 1,
-                    skipQA: true
+                    workers: 1
                   }
                 );
-              } else {
-                // Full mode: Run spec creation pipeline
-                const taskDescription = task.description || task.title;
-                console.warn(`[Recovery] Starting spec creation for: ${task.specId}`);
-                agentManager.startSpecCreation(task.specId, project.path, taskDescription, specDirForWatcher, task.metadata);
               }
-            } else {
-              // Spec exists - run task execution
-              console.warn(`[Recovery] Starting task execution for: ${task.specId}`);
-              agentManager.startTaskExecution(
-                taskId,
-                project.path,
-                task.specId,
-                {
-                  parallel: false,
-                  workers: 1,
-                  skipQA: isQuickModeRecovery
-                }
-              );
             }
 
             autoRestarted = true;

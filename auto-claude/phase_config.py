@@ -235,9 +235,10 @@ def get_phase_model(
     spec_dir: Path,
     phase: Phase,
     cli_model: str | None = None,
+    resolve: bool = True,
 ) -> str:
     """
-    Get the resolved model ID for a specific execution phase.
+    Get the model for a specific execution phase.
 
     Priority:
     1. CLI argument (if provided)
@@ -249,30 +250,40 @@ def get_phase_model(
         spec_dir: Path to the spec directory
         phase: Execution phase (spec, planning, coding, qa)
         cli_model: Model from CLI argument (optional)
+        resolve: If True, resolve shorthand to full model ID. If False, return shorthand.
+                 Use resolve=False when you need to preserve provider info (e.g., for GLM detection).
 
     Returns:
-        Resolved full model ID
+        Model identifier (shorthand or full ID depending on resolve parameter)
     """
+    model: str
+
     # CLI argument takes precedence
     if cli_model:
-        return resolve_model_id(cli_model)
+        model = cli_model
+    else:
+        # Load task metadata
+        metadata = load_task_metadata(spec_dir)
 
-    # Load task metadata
-    metadata = load_task_metadata(spec_dir)
+        if metadata:
+            # Check for auto profile with phase-specific config
+            if metadata.get("isAutoProfile") and metadata.get("phaseModels"):
+                phase_models = metadata["phaseModels"]
+                model = phase_models.get(phase, DEFAULT_PHASE_MODELS[phase])
+            # Non-auto profile: use single model
+            elif metadata.get("model"):
+                model = metadata["model"]
+            else:
+                # Fall back to default phase configuration
+                model = DEFAULT_PHASE_MODELS[phase]
+        else:
+            # Fall back to default phase configuration
+            model = DEFAULT_PHASE_MODELS[phase]
 
-    if metadata:
-        # Check for auto profile with phase-specific config
-        if metadata.get("isAutoProfile") and metadata.get("phaseModels"):
-            phase_models = metadata["phaseModels"]
-            model = phase_models.get(phase, DEFAULT_PHASE_MODELS[phase])
-            return resolve_model_id(model)
-
-        # Non-auto profile: use single model
-        if metadata.get("model"):
-            return resolve_model_id(metadata["model"])
-
-    # Fall back to default phase configuration
-    return resolve_model_id(DEFAULT_PHASE_MODELS[phase])
+    # Resolve to full model ID if requested
+    if resolve:
+        return resolve_model_id(model)
+    return model
 
 
 def get_phase_thinking(
