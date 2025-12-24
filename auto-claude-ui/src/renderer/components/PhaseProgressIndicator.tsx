@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import type { ExecutionPhase, TaskLogs, Subtask } from '../../shared/types';
+import type { ExecutionPhase, TaskLogs, Subtask, AgentFramework } from '../../shared/types';
 
 interface PhaseProgressIndicatorProps {
   phase?: ExecutionPhase;
@@ -9,6 +9,7 @@ interface PhaseProgressIndicatorProps {
   isStuck?: boolean;
   isRunning?: boolean;
   className?: string;
+  framework?: AgentFramework;
 }
 
 // Phase display configuration
