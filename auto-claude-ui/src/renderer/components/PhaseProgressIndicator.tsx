@@ -214,11 +214,17 @@ function PhaseStepsIndicator({
   isStuck: boolean;
   framework?: AgentFramework;
 }) {
-  const phases: { key: ExecutionPhase; label: string }[] = [
+  // Base phases for all frameworks
+  const basePhases: { key: ExecutionPhase; label: string }[] = [
     { key: 'planning', label: 'Plan' },
     { key: 'coding', label: 'Code' },
-    { key: 'qa_review', label: 'QA' },
   ];
+
+  // QA phase only shown for auto-claude framework (not for quick-mode)
+  const phases: { key: ExecutionPhase; label: string }[] =
+    framework === 'quick-mode'
+      ? basePhases
+      : [...basePhases, { key: 'qa_review', label: 'QA' }];
 
   const getPhaseState = (phaseKey: ExecutionPhase) => {
     const phaseOrder = ['planning', 'coding', 'qa_review', 'qa_fixing', 'complete'];
