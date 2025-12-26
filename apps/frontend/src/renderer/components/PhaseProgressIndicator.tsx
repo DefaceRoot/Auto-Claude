@@ -231,17 +231,18 @@ function PhaseStepsIndicator({
 }) {
   const { t } = useTranslation('tasks');
 
-  const phases: { key: ExecutionPhase; labelKey: string }[] = [
-    { key: 'planning', labelKey: 'execution.shortPhases.plan' },
-    { key: 'coding', labelKey: 'execution.shortPhases.code' },
-    { key: 'qa_review', labelKey: 'execution.shortPhases.qa' },
-  ];
-
   // QA phase only shown for auto-claude framework (not for quick-mode)
-  const phases: { key: ExecutionPhase; label: string }[] =
+  const phases: { key: ExecutionPhase; labelKey: string }[] =
     framework === 'quick-mode'
-      ? basePhases
-      : [...basePhases, { key: 'qa_review', label: 'QA' }];
+      ? [
+          { key: 'planning', labelKey: 'execution.shortPhases.plan' },
+          { key: 'coding', labelKey: 'execution.shortPhases.code' },
+        ]
+      : [
+          { key: 'planning', labelKey: 'execution.shortPhases.plan' },
+          { key: 'coding', labelKey: 'execution.shortPhases.code' },
+          { key: 'qa_review', labelKey: 'execution.shortPhases.qa' },
+        ];
 
   const getPhaseState = (phaseKey: ExecutionPhase) => {
     const phaseOrder = ['planning', 'coding', 'qa_review', 'qa_fixing', 'complete'];

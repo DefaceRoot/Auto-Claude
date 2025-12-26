@@ -61,6 +61,7 @@ function getTaskFramework(task: { metadata?: { framework?: AgentFramework } }): 
   return task.metadata?.framework || 'auto-claude';
 }
 
+/**
  * Register task execution handlers (start, stop, review, status management, recovery)
  */
 export function registerTaskExecutionHandlers(
