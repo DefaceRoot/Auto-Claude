@@ -90,6 +90,9 @@ export interface AppSettings {
   defaultModel: string;
   agentFramework: AgentFramework;
   pythonPath?: string;
+  gitPath?: string;
+  githubCLIPath?: string;
+  claudePath?: string;
   autoBuildPath?: string;
   autoUpdateAutoBuild: boolean;
   autoNameTerminals: boolean;

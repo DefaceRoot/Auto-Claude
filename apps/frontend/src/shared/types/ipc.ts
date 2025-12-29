@@ -123,7 +123,6 @@ export interface ElectronAPI {
   getProjects: () => Promise<IPCResult<Project[]>>;
   updateProjectSettings: (projectId: string, settings: Partial<ProjectSettings>) => Promise<IPCResult>;
   initializeProject: (projectId: string) => Promise<IPCResult<InitializationResult>>;
-  updateProjectAutoBuild: (projectId: string) => Promise<IPCResult<InitializationResult>>;
   checkProjectVersion: (projectId: string) => Promise<IPCResult<AutoBuildVersionInfo>>;
 
   // Tab State (persisted in main process for reliability)
@@ -179,6 +178,7 @@ export interface ElectronAPI {
   getTerminalSessionsForDate: (date: string, projectPath: string) => Promise<IPCResult<TerminalSession[]>>;
   restoreTerminalSessionsFromDate: (date: string, projectPath: string, cols?: number, rows?: number) => Promise<IPCResult<SessionDateRestoreResult>>;
   saveTerminalBuffer: (terminalId: string, serialized: string) => Promise<void>;
+  checkTerminalPtyAlive: (terminalId: string) => Promise<IPCResult<{ alive: boolean }>>;
 
   // Terminal event listeners
   onTerminalOutput: (callback: (id: string, data: string) => void) => () => void;
@@ -239,6 +239,12 @@ export interface ElectronAPI {
   // App settings
   getSettings: () => Promise<IPCResult<AppSettings>>;
   saveSettings: (settings: Partial<AppSettings>) => Promise<IPCResult>;
+  getCliToolsInfo: () => Promise<IPCResult<{
+    python: import('./cli').ToolDetectionResult;
+    git: import('./cli').ToolDetectionResult;
+    gh: import('./cli').ToolDetectionResult;
+    claude: import('./cli').ToolDetectionResult;
+  }>>;
 
   // Dialog operations
   selectDirectory: () => Promise<string | null>;
@@ -450,6 +456,7 @@ export interface ElectronAPI {
 
   // Shell operations
   openExternal: (url: string) => Promise<void>;
+  openTerminal: (dirPath: string) => Promise<IPCResult<void>>;
 
   // Auto Claude source environment operations
   getSourceEnv: () => Promise<IPCResult<SourceEnvConfig>>;

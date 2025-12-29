@@ -42,7 +42,7 @@ const PHASE_LABEL_KEYS: Record<ExecutionPhase, string> = {
  * - Stuck: Shows warning state with interrupted animation
  */
 export function PhaseProgressIndicator({
-  phase = 'idle',
+  phase: rawPhase,
   subtasks,
   phaseLogs,
   isStuck = false,
@@ -51,6 +51,7 @@ export function PhaseProgressIndicator({
   framework,
 }: PhaseProgressIndicatorProps) {
   const { t } = useTranslation('tasks');
+  const phase = rawPhase || 'idle';
 
   // Calculate subtask-based progress (for coding phase)
   const completedSubtasks = subtasks.filter((c) => c.status === 'completed').length;
